@@ -1,0 +1,6 @@
+pip install selenium webdriver-manager
+playwright install chromium
+pip install selenium webdriver-manager paramiko pillow
+pip install selenium webdriver-manager boto3 pillow
+pip install pyautogui
+pip install pytesseract

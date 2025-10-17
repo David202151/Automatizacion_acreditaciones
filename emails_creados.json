@@ -1,0 +1,38 @@
+[
+  {
+    "id": "2560",
+    "name": "PRUEBA-CME-BOL-INF-MME-PERSONAL_HOTEL_MITAD_DEL_MUNDO_17OCTUBRE25",
+    "establishment": "Hotel Mitad del Mundo",
+    "type": "personal"
+  },
+  {
+    "id": "2561",
+    "name": "PRUEBA-CME-BOL-INF-MME-CORPORATIVO_HOTEL_MITAD_DEL_MUNDO_17OCTUBRE25",
+    "establishment": "Hotel Mitad del Mundo",
+    "type": "corporate"
+  },
+  {
+    "id": "2562",
+    "name": "PRUEBA-CME-BOL-INF-MME-PERSONAL_MAMIT_17OCTUBRE25",
+    "establishment": "MamiT",
+    "type": "personal"
+  },
+  {
+    "id": "2563",
+    "name": "PRUEBA-CME-BOL-INF-MME-CORPORATIVO_MAMIT_17OCTUBRE25",
+    "establishment": "MamiT",
+    "type": "corporate"
+  },
+  {
+    "id": "2564",
+    "name": "PRUEBA-CME-BOL-INF-MME-PERSONAL_PROAUTO_17OCTUBRE25",
+    "establishment": "ProAuto",
+    "type": "personal"
+  },
+  {
+    "id": "2565",
+    "name": "PRUEBA-CME-BOL-INF-MME-CORPORATIVO_PROAUTO_17OCTUBRE25",
+    "establishment": "ProAuto",
+    "type": "corporate"
+  }
+]
