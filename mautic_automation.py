@@ -384,44 +384,58 @@ class AutomationGUI:
         
         # ===== FRAME DE BOTONES PRINCIPALES =====
         main_button_frame = ttk.Frame(main_frame)
-        main_button_frame.pack(fill=tk.X)
-        
+        main_button_frame.pack(fill=tk.X, pady=10)
+
         main_button_container = ttk.Frame(main_button_frame)
         main_button_container.pack()
-        
+
         # Botón para crear boletines
-        self.start_button = ttk.Button(main_button_container, 
-                                      text="CREAR BOLETINES", 
-                                      command=self.start_process, 
-                                      state='disabled',
-                                      width=20)
+        self.start_button = ttk.Button(
+            main_button_container,
+            text="CREAR BOLETINES",
+            command=self.start_process,
+            state='disabled',
+            width=20
+        )
         self.start_button.grid(row=0, column=0, padx=5)
-        
+
         # Botón para crear campañas (inicialmente deshabilitado)
-        self.campaign_button = ttk.Button(main_button_container, 
-                                         text="CREAR CAMPAÑAS", 
-                                         command=self.create_campaigns, 
-                                         state='disabled',
-                                         width=20)
+        self.campaign_button = ttk.Button(
+            main_button_container,
+            text="CREAR CAMPAÑAS",
+            command=self.create_campaigns,
+            state='disabled',
+            width=20
+        )
         self.campaign_button.grid(row=0, column=1, padx=5)
+
         # Botón para cargar campañas pendientes
-        self.load_pending_button = ttk.Button(main_button_container, 
-                                            text="CARGAR PENDIENTES", 
-                                            command=self.load_pending_campaigns, 
-                                            width=20)
-        self.load_pending_button.grid(row=0, column=3, padx=5)
+        self.load_pending_button = ttk.Button(
+            main_button_container,
+            text="CARGAR PENDIENTES",
+            command=self.load_pending_campaigns,
+            width=20
+        )
+        self.load_pending_button.grid(row=0, column=2, padx=5)
+
         # Botón para clonar boletines
-        self.clone_button = ttk.Button(main_button_container, 
-                                    text="CLONAR BOLETINES", 
-                                    command=self.open_clone_dialog, 
-                                    width=20)
+        self.clone_button = ttk.Button(
+            main_button_container,
+            text="CLONAR BOLETINES",
+            command=self.open_clone_dialog,
+            width=20
+        )
         self.clone_button.grid(row=0, column=3, padx=5)
-        # Botón cerrar
-        self.close_button = ttk.Button(main_button_container, 
-                                      text="Cerrar", 
-                                      command=self.root.quit,
-                                      width=15)
-        self.close_button.grid(row=0, column=2, padx=5)
+
+        # Botón para cerrar
+        self.close_button = ttk.Button(
+            main_button_container,
+            text="CERRAR",
+            command=self.root.quit,
+            width=15
+        )
+        self.close_button.grid(row=0, column=4, padx=5)
+
         
         # Label informativo sobre las campañas
         campaign_info_label = ttk.Label(main_frame, 
@@ -695,26 +709,53 @@ class AutomationGUI:
                                     mautic.wait = cloner.wait
                                     mautic.is_logged_in = True
                                     
-                                    if mautic.create_email_for_establishment(
+                                    new_email_id = mautic.create_email_for_establishment(
                                         establishment, image_url, img_width, img_height, 
                                         email_type, field_alias
-                                    ):
+                                    )
+                                    
+                                    if new_email_id:
                                         self.log_message("   ✅ Boletín recreado exitosamente")
+                                        self.log_message(f"   Nuevo ID: {new_email_id}")
                                         
-                                        # Guardar info del nuevo email
-                                        # El ID nuevo estará en Config.CREATED_EMAILS
-                                        if Config.CREATED_EMAILS:
-                                            new_email = Config.CREATED_EMAILS[-1]
-                                            cloned_emails.append(new_email)
-                                            success_count += 1
+                                        # *** PARTE CRÍTICA: ACTUALIZAR LA LISTA ORIGINAL ***
+                                        # Buscar el email original en Config.CREATED_EMAILS y actualizar su ID
+                                        for i, original_email in enumerate(Config.CREATED_EMAILS):
+                                            if original_email['name'] == email_name:
+                                                old_id = original_email['id']
+                                                Config.CREATED_EMAILS[i]['id'] = new_email_id
+                                                Config.CREATED_EMAILS[i]['recreated'] = True
+                                                Config.CREATED_EMAILS[i]['corrected_at'] = datetime.now().isoformat()
+                                                self.log_message(f"   ✓ ID actualizado en memoria: {old_id} → {new_email_id}")
+                                                break
+                                        
+                                        # Guardar la actualización en el archivo JSON
+                                        try:
+                                            with open('emails_creados.json', 'w') as f:
+                                                json.dump(Config.CREATED_EMAILS, f, indent=4)
+                                            self.log_message(f"   ✓ Archivo JSON actualizado con nuevo ID")
+                                        except Exception as e:
+                                            self.log_message(f"   ⚠️ Error actualizando JSON: {e}")
+                                        
+                                        # Agregar a la lista de emails corregidos
+                                        cloned_emails.append({
+                                            'id': new_email_id,
+                                            'name': email_name,
+                                            'establishment': establishment,
+                                            'type': email_type,
+                                            'field': field_alias,
+                                            'old_id': email_id,
+                                            'recreated': True
+                                        })
+                                        success_count += 1
                                     else:
                                         self.log_message("   ❌ Error recreando boletín")
                                         failed_count += 1
+                                    
+                                    uploader.disconnect()
                                 else:
                                     self.log_message("   ❌ Error subiendo imagen")
                                     failed_count += 1
-                                
-                                uploader.disconnect()
                             else:
                                 self.log_message("   ❌ No se encontró imagen")
                                 failed_count += 1
@@ -735,6 +776,49 @@ class AutomationGUI:
                     self.log_message(f"\n✅ Información guardada en correcciones.json")
             
             else:  # modo "final"
+                # Recargar IDs actualizados desde JSON para asegurar que tenemos los IDs correctos
+                try:
+                    if os.path.exists('emails_creados.json'):
+                        with open('emails_creados.json', 'r') as f:
+                            current_emails = json.load(f)
+                        
+                        self.log_message("✓ Verificando emails para clonación final...")
+                        
+                        # IMPORTANTE: NO clonar los que ya fueron clonados previamente
+                        emails_to_clone = []
+                        already_cloned = set()
+                        
+                        # Verificar si existe archivo de emails finales previos
+                        if os.path.exists('emails_finales.json'):
+                            with open('emails_finales.json', 'r') as f:
+                                previous_finals = json.load(f)
+                                for final_email in previous_finals:
+                                    # Guardar los nombres de los ya clonados
+                                    already_cloned.add(final_email.get('original_name', final_email.get('name', '')))
+                        
+                        # Filtrar emails para clonar
+                        for email in current_emails:
+                            email_name = email.get('name', '')
+                            
+                            # NO clonar si:
+                            # 1. Ya fue clonado previamente (está en emails_finales.json)
+                            # 2. NO tiene "PRUEBA" en el nombre (ya es final)
+                            if email_name in already_cloned:
+                                self.log_message(f"   ⏭️ Saltando {email_name} (ya fue clonado)")
+                            elif "PRUEBA" not in email_name:
+                                self.log_message(f"   ⏭️ Saltando {email_name} (no es prueba)")
+                            else:
+                                emails_to_clone.append(email)
+                                self.log_message(f"   ✓ Agregado para clonar: {email_name}")
+                        
+                        self.log_message(f"\nTotal a clonar: {len(emails_to_clone)} boletines")
+                        selected_emails = emails_to_clone
+                        
+                except Exception as e:
+                    self.log_message(f"⚠️ Error verificando emails: {e}")
+                    # Usar la lista original si hay error
+                    selected_emails = [e for e in selected_emails if "PRUEBA" in e.get('name', '')]
+                
                 # Modo final: Clonar todos sin "PRUEBA"
                 for email in selected_emails:
                     email_id = email.get('id')
@@ -747,6 +831,7 @@ class AutomationGUI:
                     import re
                     new_name = re.sub(r'PRUEBA\d*-', '', new_name)
                     new_name = re.sub(r'PRUEBA\d*_', '', new_name)
+                    new_name = re.sub(r'PRUEBA\d*', '', new_name)
                     
                     self.log_message(f"\nClonando: {email_name}")
                     self.log_message(f"   Nuevo nombre: {new_name}")
@@ -762,7 +847,10 @@ class AutomationGUI:
                             'name': new_name,
                             'establishment': email.get('establishment'),
                             'type': email.get('type'),
-                            'original_id': email_id
+                            'field': email.get('field'),
+                            'original_id': email_id,
+                            'original_name': email_name,
+                            'cloned_at': datetime.now().isoformat()
                         }
                         cloned_emails.append(cloned_email)
                         success_count += 1
@@ -775,8 +863,20 @@ class AutomationGUI:
                 
                 # Guardar los emails finales en emails_finales.json
                 if cloned_emails:
+                    # Si ya existe el archivo, combinar con los nuevos
+                    existing_finals = []
+                    if os.path.exists('emails_finales.json'):
+                        try:
+                            with open('emails_finales.json', 'r') as f:
+                                existing_finals = json.load(f)
+                        except:
+                            existing_finals = []
+                    
+                    # Combinar existentes con nuevos
+                    all_finals = existing_finals + cloned_emails
+                    
                     with open('emails_finales.json', 'w') as f:
-                        json.dump(cloned_emails, f, indent=2)
+                        json.dump(all_finals, f, indent=2)
                     self.log_message(f"\n✅ Información guardada en emails_finales.json")
             
             cloner.close()
@@ -793,7 +893,8 @@ class AutomationGUI:
             if success_count > 0:
                 if mode == "correcciones":
                     msg = f"Se han recreado {success_count} boletines exitosamente.\n\n" + \
-                        "Puedes crear campañas usando el botón 'Crear Campañas' en el diálogo de clonación."
+                        "Los IDs han sido actualizados en emails_creados.json.\n" + \
+                        "Puedes crear campañas usando el botón 'Crear Campañas'."
                 else:
                     msg = f"Se han clonado {success_count} boletines finales exitosamente.\n\n" + \
                         "Los nuevos boletines están listos para producción."
@@ -1926,21 +2027,65 @@ class MauticBulkAutomator:
                 email_id = current_url.split('/')[-1]
                 self.log(f"      OK - Boletín creado (ID: {email_id})")
                 
-                # Guardar información del email creado
-                Config.CREATED_EMAILS.append({
-                    'id': email_id,
-                    'name': internal_name,
-                    'establishment': establishment_name,
-                    'type': bulletin_type
-                })
-                return True
+                # ============================================
+                # SOLUCIÓN IMPLEMENTADA PARA EVITAR DUPLICADOS
+                # ============================================
+                
+                # Verificar si este boletín ya existe en la lista (es una recreación)
+                email_exists = False
+                existing_index = -1
+                
+                for index, existing_email in enumerate(Config.CREATED_EMAILS):
+                    # Comparar por nombre, establecimiento y tipo para identificar si es el mismo boletín
+                    if (existing_email['name'] == internal_name and 
+                        existing_email['establishment'] == establishment_name and
+                        existing_email['type'] == bulletin_type):
+                        # Este boletín ya existe, es una recreación
+                        email_exists = True
+                        existing_index = index
+                        self.log(f"      ✓ Boletín existente detectado, actualizando ID")
+                        break
+                
+                if email_exists and existing_index >= 0:
+                    # ACTUALIZAR el boletín existente en lugar de agregar uno nuevo
+                    Config.CREATED_EMAILS[existing_index]['id'] = email_id
+                    Config.CREATED_EMAILS[existing_index]['recreated'] = True
+                    Config.CREATED_EMAILS[existing_index]['updated_at'] = datetime.now().isoformat()
+                    
+                    # Si hay un campo field anterior, mantenerlo
+                    if 'field' not in Config.CREATED_EMAILS[existing_index]:
+                        Config.CREATED_EMAILS[existing_index]['field'] = field_alias
+                    
+                    self.log(f"      ✓ ID actualizado en posición {existing_index}")
+                    
+                else:
+                    # Es un boletín nuevo, agregarlo a la lista
+                    Config.CREATED_EMAILS.append({
+                        'id': email_id,
+                        'name': internal_name,
+                        'establishment': establishment_name,
+                        'type': bulletin_type,
+                        'field': field_alias
+                    })
+                    self.log(f"      ✓ Nuevo boletín agregado a la lista")
+                
+                # Guardar inmediatamente en el archivo JSON para mantener consistencia
+                try:
+                    with open('emails_creados.json', 'w') as f:
+                        json.dump(Config.CREATED_EMAILS, f, indent=2)
+                    self.log(f"      ✓ Archivo emails_creados.json actualizado")
+                except Exception as e:
+                    self.log(f"      ⚠️ Error guardando JSON: {str(e)}")
+                
+                return email_id
             else:
                 self.log(f"      OK - Boletín posiblemente creado")
-                return True
+                return None
                 
         except Exception as e:
             self.log(f"      ERROR - No se pudo crear: {str(e)}")
-            return False
+            return None
+        
     
     def find_spanish_value(self):
         """Encontrar el valor de español en el dropdown"""
@@ -4509,23 +4654,258 @@ class MauticEmailCloner:
             return False
     
     def delete_email(self, email_id, email_name):
-        """Eliminar un email de Mautic"""
+        """Eliminar un email de Mautic usando búsqueda por nombre"""
         try:
             self.log(f"Eliminando boletín: {email_name} (ID: {email_id})")
             
-            # Navegar a la lista de emails
+            # ===== PASO 1: NAVEGAR A LA LISTA DE EMAILS =====
+            self.log("   PASO 1: Navegando a la lista de emails...")
             self.driver.get(f"{self.base_url}/s/emails")
+            time.sleep(3)
+            
+            # ===== PASO 2: LIMPIAR BÚSQUEDA ANTERIOR =====
+            self.log("   PASO 2: Limpiando búsquedas anteriores...")
+            self.driver.execute_script("""
+                var searchInput = document.getElementById('list-search');
+                if (searchInput) {
+                    searchInput.value = '';
+                    searchInput.dispatchEvent(new Event('input', {bubbles: true}));
+                    
+                    // Hacer clic en el botón de limpiar si existe
+                    var clearButton = document.querySelector('button[data-livesearch-action="clear"]');
+                    if (clearButton && clearButton.offsetParent !== null) {
+                        clearButton.click();
+                    }
+                }
+            """)
+            
             time.sleep(2)
             
-            # Hacer clic en el menú desplegable del email
-            self.log("   Abriendo menú de acciones...")
+            # ===== PASO 3: ESCRIBIR EN EL CAMPO DE BÚSQUEDA =====
+            self.log(f"   PASO 3: Escribiendo en el buscador: {email_name}")
+            
+            search_written = self.driver.execute_script("""
+                var emailName = arguments[0];
+                var searchInput = document.getElementById('list-search');
+                
+                if (!searchInput) {
+                    console.log('No se encontró el input de búsqueda');
+                    return false;
+                }
+                
+                // Enfocar el input
+                searchInput.focus();
+                searchInput.click();
+                
+                // Limpiar cualquier valor
+                searchInput.value = '';
+                
+                // Escribir el nombre letra por letra (más realista)
+                var index = 0;
+                var interval = setInterval(function() {
+                    if (index < emailName.length) {
+                        searchInput.value += emailName[index];
+                        
+                        // Disparar eventos en cada letra
+                        searchInput.dispatchEvent(new Event('input', {bubbles: true}));
+                        searchInput.dispatchEvent(new Event('keyup', {bubbles: true}));
+                        
+                        index++;
+                    } else {
+                        clearInterval(interval);
+                        
+                        // Disparar eventos finales
+                        searchInput.dispatchEvent(new Event('change', {bubbles: true}));
+                        
+                        console.log('Texto completo escrito:', searchInput.value);
+                    }
+                }, 50); // 50ms entre cada letra
+                
+                return true;
+            """, email_name)
+            
+            if not search_written:
+                self.log("   ❌ No se pudo escribir en el campo de búsqueda")
+                return False
+            
+            # Esperar a que termine de escribir (nombre completo + buffer)
+            write_time = len(email_name) * 0.05 + 1
+            self.log(f"   ⏳ Esperando {write_time:.1f}s a que termine de escribir...")
+            time.sleep(write_time)
+            
+            # ===== PASO 4: HACER CLIC EN EL BOTÓN DE BÚSQUEDA =====
+            self.log("   PASO 4: Haciendo clic en el botón de búsqueda...")
+            
+            search_clicked = self.driver.execute_script("""
+                var searchButton = document.querySelector('button[data-livesearch-action="search"]');
+                
+                if (searchButton && searchButton.offsetParent !== null) {
+                    console.log('Botón de búsqueda encontrado');
+                    searchButton.scrollIntoView({behavior: 'smooth', block: 'center'});
+                    
+                    // Hacer clic
+                    searchButton.click();
+                    
+                    console.log('Click en búsqueda ejecutado');
+                    return true;
+                }
+                
+                console.log('No se encontró el botón de búsqueda');
+                return false;
+            """)
+            
+            if not search_clicked:
+                self.log("   ⚠️ No se pudo hacer clic en el botón, intentando con Enter...")
+                
+                # Método alternativo: Presionar Enter en el input
+                self.driver.execute_script("""
+                    var searchInput = document.getElementById('list-search');
+                    if (searchInput) {
+                        var enterEvent = new KeyboardEvent('keypress', {
+                            key: 'Enter',
+                            code: 'Enter',
+                            keyCode: 13,
+                            which: 13,
+                            bubbles: true,
+                            cancelable: true
+                        });
+                        searchInput.dispatchEvent(enterEvent);
+                    }
+                """)
+            
+            # ===== PASO 5: ESPERAR RESULTADOS DE BÚSQUEDA =====
+            self.log("   PASO 5: Esperando resultados de búsqueda...")
+            time.sleep(4)
+            
+            # ===== PASO 6: VERIFICAR QUE EL BOLETÍN APARECE EN LOS RESULTADOS =====
+            self.log("   PASO 6: Verificando resultados...")
+            
+            search_results = self.driver.execute_script("""
+                var emailId = arguments[0];
+                var emailName = arguments[1];
+                
+                var results = {
+                    found: false,
+                    method: 'none',
+                    totalRows: 0,
+                    matchingRows: []
+                };
+                
+                var allRows = document.querySelectorAll('tbody tr');
+                results.totalRows = allRows.length;
+                
+                console.log('Total de filas visibles:', allRows.length);
+                
+                for (var i = 0; i < allRows.length; i++) {
+                    var row = allRows[i];
+                    var rowId = row.getAttribute('data-id');
+                    var rowText = row.textContent;
+                    
+                    console.log('Fila', i, '- ID:', rowId, '- Contiene email ID:', rowText.includes(emailId));
+                    
+                    // Verificar por data-id
+                    if (rowId === emailId) {
+                        results.found = true;
+                        results.method = 'data-id-exact';
+                        results.matchingRows.push(i);
+                        console.log('✓ Coincidencia exacta por data-id');
+                        break;
+                    }
+                    
+                    // Verificar por ID en el texto
+                    if (rowText.includes(emailId)) {
+                        results.found = true;
+                        results.method = 'text-id';
+                        results.matchingRows.push(i);
+                        console.log('✓ Coincidencia por ID en texto');
+                        break;
+                    }
+                    
+                    // Verificar por nombre
+                    if (rowText.includes(emailName)) {
+                        results.found = true;
+                        results.method = 'text-name';
+                        results.matchingRows.push(i);
+                        console.log('✓ Coincidencia por nombre');
+                        break;
+                    }
+                }
+                
+                return results;
+            """, email_id, email_name)
+            
+            self.log(f"   Filas en resultados: {search_results['totalRows']}")
+            
+            if not search_results['found']:
+                self.log(f"   ❌ El boletín no aparece en los resultados de búsqueda")
+                self.log(f"   Esto puede significar:")
+                self.log(f"     - El boletín ya fue eliminado")
+                self.log(f"     - El nombre no coincide exactamente")
+                self.log(f"     - Hay un problema con la búsqueda de Mautic")
+                
+                # FALLBACK: Intentar acceso directo
+                self.log("   FALLBACK: Intentando acceso directo por URL...")
+                edit_url = f"{self.base_url}/s/emails/edit/{email_id}"
+                self.driver.get(edit_url)
+                time.sleep(3)
+                
+                page_valid = self.driver.execute_script("""
+                    var emailForm = document.getElementById('emailform_name');
+                    return !!emailForm;
+                """)
+                
+                if page_valid:
+                    self.log(f"   ✓ Email encontrado por URL directa, procediendo a eliminar...")
+                    delete_url = f"{self.base_url}/s/emails/delete/{email_id}"
+                    self.driver.get(delete_url)
+                    time.sleep(2)
+                    
+                    # Ir a confirmar
+                    confirm_clicked = self.driver.execute_script("""
+                        var deleteButton = document.querySelector('.modal button.btn-danger');
+                        if (!deleteButton) {
+                            var buttons = document.querySelectorAll('button');
+                            for (var i = 0; i < buttons.length; i++) {
+                                if (buttons[i].textContent.trim() === 'Delete') {
+                                    deleteButton = buttons[i];
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (deleteButton && deleteButton.offsetParent !== null) {
+                            deleteButton.click();
+                            return true;
+                        }
+                        return false;
+                    """)
+                    
+                    if confirm_clicked:
+                        self.log("   ✓ Eliminación confirmada")
+                        time.sleep(4)
+                        self.log(f"   ✅ Boletín eliminado exitosamente (método directo)")
+                        return True
+                else:
+                    self.log(f"   ❌ El boletín no existe en Mautic")
+                    return False
+            
+            self.log(f"   ✓ Boletín encontrado en búsqueda (método: {search_results['method']})")
+            self.log(f"   ✓ Fila(s) coincidente(s): {search_results['matchingRows']}")
+            
+            # ===== PASO 7: ABRIR MENÚ DE ACCIONES =====
+            self.log("   PASO 7: Abriendo menú de acciones...")
+            
             dropdown_opened = self.driver.execute_script("""
-                var emailRow = document.querySelector('tr[data-id="' + arguments[0] + '"]');
+                var emailId = arguments[0];
+                
+                // Buscar la fila por data-id
+                var emailRow = document.querySelector('tr[data-id="' + emailId + '"]');
+                
+                // Si no se encuentra por data-id, buscar en el contenido
                 if (!emailRow) {
-                    // Buscar por cualquier elemento que contenga el ID
-                    var allRows = document.querySelectorAll('tr');
+                    var allRows = document.querySelectorAll('tbody tr');
                     for (var i = 0; i < allRows.length; i++) {
-                        if (allRows[i].textContent.includes(arguments[0])) {
+                        if (allRows[i].textContent.includes(emailId)) {
                             emailRow = allRows[i];
                             break;
                         }
@@ -4535,30 +4915,54 @@ class MauticEmailCloner:
                 if (emailRow) {
                     var dropdownButton = emailRow.querySelector('button[data-toggle="dropdown"]');
                     if (dropdownButton) {
-                        dropdownButton.click();
+                        // Scroll al elemento
+                        dropdownButton.scrollIntoView({behavior: 'smooth', block: 'center'});
+                        
+                        // Esperar un momento y hacer clic
+                        setTimeout(function() {
+                            dropdownButton.click();
+                            console.log('Click en dropdown ejecutado');
+                        }, 500);
+                        
                         return true;
                     }
                 }
+                
                 return false;
             """, email_id)
             
             if not dropdown_opened:
-                self.log("   ⚠️ No se pudo abrir el menú, intentando método alternativo...")
-                # Buscar el enlace directo de delete
+                self.log("   ⚠️ No se pudo abrir el menú, usando URL directa...")
                 delete_url = f"{self.base_url}/s/emails/delete/{email_id}"
                 self.driver.get(delete_url)
-                time.sleep(1)
+                time.sleep(2)
             else:
-                time.sleep(1)
+                self.log("   ✓ Menú de acciones abierto")
+                time.sleep(2)
                 
-                # Hacer clic en "Delete"
-                self.log("   Haciendo clic en Delete...")
+                # ===== PASO 8: HACER CLIC EN DELETE =====
+                self.log("   PASO 8: Haciendo clic en Delete...")
+                
                 delete_clicked = self.driver.execute_script("""
-                    var deleteLink = document.querySelector('a[href*="/emails/delete/' + arguments[0] + '"]');
+                    var emailId = arguments[0];
+                    
+                    // Buscar el enlace de Delete
+                    var deleteLink = document.querySelector('a[href*="/emails/delete/' + emailId + '"]');
                     if (deleteLink) {
                         deleteLink.click();
+                        console.log('Click en Delete ejecutado');
                         return true;
                     }
+                    
+                    // Método alternativo: buscar por texto
+                    var links = document.querySelectorAll('.dropdown-menu a');
+                    for (var i = 0; i < links.length; i++) {
+                        if (links[i].textContent.trim() === 'Delete' && links[i].href.includes(emailId)) {
+                            links[i].click();
+                            return true;
+                        }
+                    }
+                    
                     return false;
                 """, email_id)
                 
@@ -4566,18 +4970,22 @@ class MauticEmailCloner:
                     self.log("   ❌ No se pudo hacer clic en Delete")
                     return False
                 
+                self.log("   ✓ Click en Delete ejecutado")
                 time.sleep(2)
             
-            # Confirmar eliminación en el modal
-            self.log("   Confirmando eliminación...")
+            # ===== PASO 9: CONFIRMAR ELIMINACIÓN =====
+            self.log("   PASO 9: Confirmando eliminación...")
+            
             confirm_clicked = self.driver.execute_script("""
-                // Buscar el botón Delete en el modal de confirmación
-                var deleteButton = document.querySelector('button.btn-danger');
+                // Buscar el botón Delete en el modal
+                var deleteButton = document.querySelector('.modal.in button.btn-danger, .modal.show button.btn-danger');
+                
                 if (!deleteButton) {
                     // Buscar por texto
-                    var buttons = document.querySelectorAll('button');
+                    var buttons = document.querySelectorAll('.modal button, button');
                     for (var i = 0; i < buttons.length; i++) {
-                        if (buttons[i].textContent.trim() === 'Delete') {
+                        if (buttons[i].textContent.trim() === 'Delete' && 
+                            buttons[i].offsetParent !== null) {
                             deleteButton = buttons[i];
                             break;
                         }
@@ -4586,24 +4994,45 @@ class MauticEmailCloner:
                 
                 if (deleteButton && deleteButton.offsetParent !== null) {
                     deleteButton.click();
+                    console.log('Confirmación de Delete ejecutada');
                     return true;
                 }
+                
                 return false;
             """)
             
             if not confirm_clicked:
-                self.log("   ⚠️ No se pudo hacer clic en confirmar, intentando manualmente...")
-                input("   >>> Presiona ENTER después de confirmar la eliminación...")
+                self.log("   ⚠️ No se pudo confirmar automáticamente")
+                self.log("   >>> Por favor confirma la eliminación manualmente")
+                input("   >>> Presiona ENTER después de confirmar...")
+            else:
+                self.log("   ✓ Eliminación confirmada")
             
-            time.sleep(3)
+            time.sleep(4)
             
-            # Verificar que el email fue eliminado
+            # ===== PASO 10: VERIFICAR ELIMINACIÓN =====
+            self.log("   PASO 10: Verificando que el boletín fue eliminado...")
+            
             self.driver.get(f"{self.base_url}/s/emails")
             time.sleep(2)
             
-            email_exists = self.driver.execute_script("""
+            # Buscar nuevamente el email eliminado
+            self.driver.execute_script("""
+                var emailName = arguments[0];
+                var searchInput = document.getElementById('list-search');
+                if (searchInput) {
+                    searchInput.value = emailName;
+                    searchInput.dispatchEvent(new Event('input', {bubbles: true}));
+                    var searchButton = document.querySelector('button[data-livesearch-action="search"]');
+                    if (searchButton) searchButton.click();
+                }
+            """, email_name)
+            
+            time.sleep(3)
+            
+            still_exists = self.driver.execute_script("""
                 var emailId = arguments[0];
-                var allRows = document.querySelectorAll('tr');
+                var allRows = document.querySelectorAll('tbody tr');
                 
                 for (var i = 0; i < allRows.length; i++) {
                     if (allRows[i].textContent.includes(emailId) || 
@@ -4614,13 +5043,13 @@ class MauticEmailCloner:
                 return false;
             """, email_id)
             
-            if not email_exists:
+            if not still_exists:
                 self.log(f"   ✅ Boletín eliminado exitosamente")
                 return True
             else:
                 self.log(f"   ⚠️ El boletín aún aparece en la lista")
                 return False
-                
+            
         except Exception as e:
             self.log(f"   ❌ Error eliminando boletín: {str(e)}")
             import traceback
@@ -4628,7 +5057,7 @@ class MauticEmailCloner:
             return False
     
     def clone_email(self, email_id, email_name, new_name=None):
-        """Clonar un email en Mautic"""
+        """Clonar un email en Mautic con búsqueda previa mejorada"""
         try:
             # Si no se proporciona nuevo nombre, usar el mismo
             clone_name = new_name if new_name else f"CLONE_{email_name}"
@@ -4636,75 +5065,300 @@ class MauticEmailCloner:
             self.log(f"Clonando boletín: {email_name}")
             self.log(f"   Nuevo nombre: {clone_name}")
             
-            # Navegar a la lista de emails
+            # ===== PASO 1: NAVEGAR A LA LISTA DE EMAILS =====
+            self.log("   PASO 1: Navegando a la lista de emails...")
             self.driver.get(f"{self.base_url}/s/emails")
+            time.sleep(3)
+            
+            # ===== PASO 2: LIMPIAR BÚSQUEDA ANTERIOR =====
+            self.log("   PASO 2: Limpiando búsquedas anteriores...")
+            self.driver.execute_script("""
+                var searchInput = document.getElementById('list-search');
+                if (searchInput) {
+                    searchInput.value = '';
+                    searchInput.dispatchEvent(new Event('input', {bubbles: true}));
+                    
+                    var clearButton = document.querySelector('button[data-livesearch-action="clear"]');
+                    if (clearButton && clearButton.offsetParent !== null) {
+                        clearButton.click();
+                    }
+                }
+            """)
+            
             time.sleep(2)
             
-            # Hacer clic en el menú desplegable del email
-            self.log("   Abriendo menú de acciones...")
-            dropdown_opened = self.driver.execute_script("""
-                var emailRow = document.querySelector('tr[data-id="' + arguments[0] + '"]');
-                if (!emailRow) {
-                    var allRows = document.querySelectorAll('tr');
-                    for (var i = 0; i < allRows.length; i++) {
-                        if (allRows[i].textContent.includes(arguments[0])) {
-                            emailRow = allRows[i];
-                            break;
-                        }
+            # ===== PASO 3: ESCRIBIR EN EL CAMPO DE BÚSQUEDA (LETRA POR LETRA) =====
+            self.log(f"   PASO 3: Escribiendo en el buscador: {email_name}")
+            
+            search_written = self.driver.execute_script("""
+                var emailName = arguments[0];
+                var searchInput = document.getElementById('list-search');
+                
+                if (!searchInput) {
+                    console.log('No se encontró el input de búsqueda');
+                    return false;
+                }
+                
+                // Enfocar el input
+                searchInput.focus();
+                searchInput.click();
+                
+                // Limpiar cualquier valor
+                searchInput.value = '';
+                
+                // Escribir el nombre letra por letra
+                var index = 0;
+                var interval = setInterval(function() {
+                    if (index < emailName.length) {
+                        searchInput.value += emailName[index];
+                        
+                        // Disparar eventos en cada letra
+                        searchInput.dispatchEvent(new Event('input', {bubbles: true}));
+                        searchInput.dispatchEvent(new Event('keyup', {bubbles: true}));
+                        
+                        index++;
+                    } else {
+                        clearInterval(interval);
+                        
+                        // Disparar eventos finales
+                        searchInput.dispatchEvent(new Event('change', {bubbles: true}));
+                        
+                        console.log('Texto completo escrito:', searchInput.value);
+                    }
+                }, 50);
+                
+                return true;
+            """, email_name)
+            
+            if not search_written:
+                self.log("   ❌ No se pudo escribir en el campo de búsqueda")
+                return False, None
+            
+            # Esperar a que termine de escribir
+            write_time = len(email_name) * 0.05 + 1
+            self.log(f"   ⏳ Esperando {write_time:.1f}s a que termine de escribir...")
+            time.sleep(write_time)
+            
+            # ===== PASO 4: HACER CLIC EN EL BOTÓN DE BÚSQUEDA =====
+            self.log("   PASO 4: Haciendo clic en el botón de búsqueda...")
+            
+            search_clicked = self.driver.execute_script("""
+                var searchButton = document.querySelector('button[data-livesearch-action="search"]');
+                
+                if (searchButton && searchButton.offsetParent !== null) {
+                    console.log('Botón de búsqueda encontrado');
+                    searchButton.scrollIntoView({behavior: 'smooth', block: 'center'});
+                    searchButton.click();
+                    console.log('Click en búsqueda ejecutado');
+                    return true;
+                }
+                
+                console.log('No se encontró el botón de búsqueda');
+                return false;
+            """)
+            
+            if not search_clicked:
+                self.log("   ⚠️ No se pudo hacer clic en el botón, intentando con Enter...")
+                
+                self.driver.execute_script("""
+                    var searchInput = document.getElementById('list-search');
+                    if (searchInput) {
+                        var enterEvent = new KeyboardEvent('keypress', {
+                            key: 'Enter',
+                            code: 'Enter',
+                            keyCode: 13,
+                            which: 13,
+                            bubbles: true,
+                            cancelable: true
+                        });
+                        searchInput.dispatchEvent(enterEvent);
+                    }
+                """)
+            
+            # ===== PASO 5: ESPERAR RESULTADOS DE BÚSQUEDA =====
+            self.log("   PASO 5: Esperando resultados de búsqueda...")
+            time.sleep(4)
+            
+            # ===== PASO 6: VERIFICAR QUE EL BOLETÍN APARECE EN LOS RESULTADOS =====
+            self.log("   PASO 6: Verificando resultados...")
+            
+            search_results = self.driver.execute_script("""
+                var emailId = arguments[0];
+                var emailName = arguments[1];
+                
+                var results = {
+                    found: false,
+                    method: 'none',
+                    totalRows: 0,
+                    matchingRows: []
+                };
+                
+                var allRows = document.querySelectorAll('tbody tr');
+                results.totalRows = allRows.length;
+                
+                console.log('Total de filas visibles:', allRows.length);
+                
+                for (var i = 0; i < allRows.length; i++) {
+                    var row = allRows[i];
+                    var rowId = row.getAttribute('data-id');
+                    var rowText = row.textContent;
+                    
+                    console.log('Fila', i, '- ID:', rowId);
+                    
+                    // Verificar por data-id
+                    if (rowId === emailId) {
+                        results.found = true;
+                        results.method = 'data-id-exact';
+                        results.matchingRows.push(i);
+                        console.log('✓ Coincidencia exacta por data-id');
+                        break;
+                    }
+                    
+                    // Verificar por ID en el texto
+                    if (rowText.includes(emailId)) {
+                        results.found = true;
+                        results.method = 'text-id';
+                        results.matchingRows.push(i);
+                        console.log('✓ Coincidencia por ID en texto');
+                        break;
+                    }
+                    
+                    // Verificar por nombre
+                    if (rowText.includes(emailName)) {
+                        results.found = true;
+                        results.method = 'text-name';
+                        results.matchingRows.push(i);
+                        console.log('✓ Coincidencia por nombre');
+                        break;
                     }
                 }
                 
-                if (emailRow) {
-                    var dropdownButton = emailRow.querySelector('button[data-toggle="dropdown"]');
-                    if (dropdownButton) {
-                        dropdownButton.click();
-                        return true;
-                    }
-                }
-                return false;
-            """, email_id)
+                return results;
+            """, email_id, email_name)
             
-            if not dropdown_opened:
-                self.log("   ⚠️ No se pudo abrir el menú, intentando método alternativo...")
+            self.log(f"   Filas en resultados: {search_results['totalRows']}")
+            
+            if not search_results['found']:
+                self.log(f"   ❌ El boletín no aparece en los resultados de búsqueda")
+                self.log(f"   ID buscado: {email_id}")
+                self.log(f"   Nombre buscado: {email_name}")
+                
+                # FALLBACK: Acceso directo por URL
+                self.log("   FALLBACK: Intentando acceso directo por URL...")
                 clone_url = f"{self.base_url}/s/emails/clone/{email_id}"
                 self.driver.get(clone_url)
-                time.sleep(2)
-            else:
-                time.sleep(1)
+                time.sleep(3)
                 
-                # Hacer clic en "Clone"
-                self.log("   Haciendo clic en Clone...")
-                clone_clicked = self.driver.execute_script("""
-                    // Buscar el enlace de Clone en el menú desplegable
-                    var cloneLink = document.querySelector('a[href*="/emails/clone/' + arguments[0] + '"]');
-                    if (cloneLink) {
-                        cloneLink.click();
-                        return true;
+                # Verificar si cargó la página de clonación
+                page_valid = self.driver.execute_script("""
+                    var nameField = document.getElementById('emailform_name');
+                    return !!nameField;
+                """)
+                
+                if not page_valid:
+                    self.log(f"   ❌ El boletín no existe o no se puede clonar")
+                    return False, None
+                
+                self.log("   ✓ Acceso directo exitoso, continuando con clonación...")
+            else:
+                self.log(f"   ✓ Boletín encontrado en búsqueda (método: {search_results['method']})")
+                self.log(f"   ✓ Fila(s) coincidente(s): {search_results['matchingRows']}")
+                
+                # ===== PASO 7: ABRIR MENÚ DE ACCIONES =====
+                self.log("   PASO 7: Abriendo menú de acciones...")
+                
+                dropdown_opened = self.driver.execute_script("""
+                    var emailId = arguments[0];
+                    
+                    // Buscar la fila por data-id
+                    var emailRow = document.querySelector('tr[data-id="' + emailId + '"]');
+                    
+                    // Si no se encuentra por data-id, buscar en el contenido
+                    if (!emailRow) {
+                        var allRows = document.querySelectorAll('tbody tr');
+                        for (var i = 0; i < allRows.length; i++) {
+                            if (allRows[i].textContent.includes(emailId)) {
+                                emailRow = allRows[i];
+                                break;
+                            }
+                        }
                     }
+                    
+                    if (emailRow) {
+                        var dropdownButton = emailRow.querySelector('button[data-toggle="dropdown"]');
+                        if (dropdownButton) {
+                            dropdownButton.scrollIntoView({behavior: 'smooth', block: 'center'});
+                            
+                            setTimeout(function() {
+                                dropdownButton.click();
+                                console.log('Click en dropdown ejecutado');
+                            }, 500);
+                            
+                            return true;
+                        }
+                    }
+                    
                     return false;
                 """, email_id)
                 
-                if not clone_clicked:
-                    self.log("   ❌ No se pudo hacer clic en Clone")
-                    return False, None
-                
-                time.sleep(3)
+                if not dropdown_opened:
+                    self.log("   ⚠️ No se pudo abrir el menú, usando URL directa...")
+                    clone_url = f"{self.base_url}/s/emails/clone/{email_id}"
+                    self.driver.get(clone_url)
+                    time.sleep(3)
+                else:
+                    self.log("   ✓ Menú de acciones abierto")
+                    time.sleep(2)
+                    
+                    # ===== PASO 8: HACER CLIC EN CLONE =====
+                    self.log("   PASO 8: Haciendo clic en Clone...")
+                    
+                    clone_clicked = self.driver.execute_script("""
+                        var emailId = arguments[0];
+                        
+                        // Buscar el enlace de Clone
+                        var cloneLink = document.querySelector('a[href*="/emails/clone/' + emailId + '"]');
+                        if (cloneLink) {
+                            cloneLink.click();
+                            console.log('Click en Clone ejecutado');
+                            return true;
+                        }
+                        
+                        // Método alternativo: buscar por texto
+                        var links = document.querySelectorAll('.dropdown-menu a');
+                        for (var i = 0; i < links.length; i++) {
+                            if (links[i].textContent.trim() === 'Clone' && links[i].href.includes(emailId)) {
+                                links[i].click();
+                                return true;
+                            }
+                        }
+                        
+                        return false;
+                    """, email_id)
+                    
+                    if not clone_clicked:
+                        self.log("   ❌ No se pudo hacer clic en Clone")
+                        return False, None
+                    
+                    self.log("   ✓ Click en Clone ejecutado")
+                    time.sleep(3)
             
-            # Cambiar el nombre del clone
-            self.log("   Cambiando nombre del boletín clonado...")
-            
-            # Esperar a que cargue la página de edición
+            # ===== PASO 9: CAMBIAR EL NOMBRE DEL CLONE =====
+            self.log("   PASO 9: Cambiando nombre del boletín clonado...")
             time.sleep(2)
             
-            # Cambiar el nombre interno
             name_changed = self.driver.execute_script("""
                 var newName = arguments[0];
                 var nameField = document.getElementById('emailform_name');
                 
                 if (nameField) {
+                    nameField.value = '';
+                    nameField.dispatchEvent(new Event('input', {bubbles: true}));
+                    
                     nameField.value = newName;
                     nameField.dispatchEvent(new Event('input', {bubbles: true}));
                     nameField.dispatchEvent(new Event('change', {bubbles: true}));
+                    
                     return true;
                 }
                 return false;
@@ -4712,23 +5366,44 @@ class MauticEmailCloner:
             
             if not name_changed:
                 self.log("   ⚠️ No se pudo cambiar el nombre automáticamente")
+                self.driver.execute_script("""
+                    var nameField = document.getElementById('emailform_name');
+                    if (nameField) {
+                        nameField.style.border = '3px solid red';
+                        nameField.style.backgroundColor = 'yellow';
+                    }
+                """)
+                
                 self.log(f"   Por favor cambia manualmente el nombre a: {clone_name}")
                 input("   >>> Presiona ENTER cuando hayas cambiado el nombre...")
+            else:
+                self.log(f"   ✓ Nombre cambiado a: {clone_name}")
             
             time.sleep(1)
             
-            # Guardar el boletín clonado
-            self.log("   Guardando boletín clonado...")
+            # ===== PASO 10: GUARDAR EL BOLETÍN CLONADO =====
+            self.log("   PASO 10: Guardando boletín clonado...")
+            
             save_clicked = self.driver.execute_script("""
                 var buttons = document.querySelectorAll('button');
                 for (var i = 0; i < buttons.length; i++) {
                     var btn = buttons[i];
-                    if (btn.textContent.includes('Save & Close') || 
-                        (btn.textContent.includes('Save') && btn.classList.contains('btn-primary'))) {
+                    var btnText = btn.textContent.trim();
+                    
+                    if (btnText.includes('Save & Close') || btnText.includes('Save and Close')) {
                         btn.click();
                         return true;
                     }
                 }
+                
+                for (var j = 0; j < buttons.length; j++) {
+                    var btn = buttons[j];
+                    if (btn.textContent.includes('Save') && btn.classList.contains('btn-primary')) {
+                        btn.click();
+                        return true;
+                    }
+                }
+                
                 return false;
             """)
             
@@ -4736,27 +5411,68 @@ class MauticEmailCloner:
                 self.log("   ⚠️ No se pudo hacer clic en Save")
                 self.log("   Por favor haz clic manualmente en 'Save & Close'")
                 input("   >>> Presiona ENTER cuando hayas guardado...")
+            else:
+                self.log("   ✓ Guardando boletín...")
             
             time.sleep(5)
             
-            # Obtener el ID del nuevo email
+            # ===== PASO 11: VERIFICAR CREACIÓN Y OBTENER ID =====
+            self.log("   PASO 11: Verificando creación del boletín clonado...")
             current_url = self.driver.current_url
             new_email_id = None
             
             if '/edit/' in current_url:
                 new_email_id = current_url.split('/')[-1]
-                self.log(f"   ✅ Boletín clonado exitosamente (Nuevo ID: {new_email_id})")
+                self.log(f"   ✅ Boletín clonado exitosamente")
+                self.log(f"   Nuevo ID: {new_email_id}")
+                self.log(f"   Nuevo nombre: {clone_name}")
                 return True, new_email_id
             else:
-                self.log("   ✅ Boletín clonado (ID no detectado)")
-                return True, None
+                # Buscar en la lista
+                self.log("   Buscando el boletín clonado en la lista...")
+                self.driver.get(f"{self.base_url}/s/emails")
+                time.sleep(2)
+                
+                # Buscar por el nuevo nombre
+                self.driver.execute_script("""
+                    var searchInput = document.getElementById('list-search');
+                    if (searchInput) {
+                        searchInput.value = arguments[0];
+                        searchInput.dispatchEvent(new Event('input', {bubbles: true}));
+                        var searchButton = document.querySelector('button[data-livesearch-action="search"]');
+                        if (searchButton) searchButton.click();
+                    }
+                """, clone_name)
+                
+                time.sleep(3)
+                
+                new_email_id = self.driver.execute_script("""
+                    var cloneName = arguments[0];
+                    var allRows = document.querySelectorAll('tbody tr');
+                    
+                    for (var i = 0; i < allRows.length; i++) {
+                        var row = allRows[i];
+                        if (row.textContent.includes(cloneName)) {
+                            var id = row.getAttribute('data-id');
+                            if (id) return id;
+                        }
+                    }
+                    return null;
+                """, clone_name)
+                
+                if new_email_id:
+                    self.log(f"   ✅ Boletín clonado encontrado")
+                    self.log(f"   Nuevo ID: {new_email_id}")
+                    return True, new_email_id
+                else:
+                    self.log("   ⚠️ Boletín clonado pero ID no detectado")
+                    return True, None
                 
         except Exception as e:
             self.log(f"   ❌ Error clonando boletín: {str(e)}")
             import traceback
             self.log(f"   Detalle: {traceback.format_exc()}")
             return False, None
-    
     def close(self):
         """Cerrar navegador"""
         if self.driver:
@@ -4773,7 +5489,7 @@ class CloneDialog:
         self.parent_gui = parent_gui
         self.dialog = tk.Toplevel(parent_gui.root)
         self.dialog.title("Clonar Boletines")
-        self.dialog.geometry("900x700")
+        self.dialog.geometry("1000x900")
         self.dialog.transient(parent_gui.root)
         self.dialog.grab_set()
         
@@ -4911,7 +5627,10 @@ class CloneDialog:
             )
             self.select_all_btn.config(state='normal')
             self.deselect_all_btn.config(state='normal')
-            self.clone_btn.config(text="ELIMINAR Y RECREAR SELECCIONADOS")
+            self.clone_btn.config(
+                text="ELIMINAR Y RECREAR SELECCIONADOS",
+                width=35  # aumenta este número para hacerlo más largo
+            )
             self.info_label.config(
                 text="Selecciona los boletines que deseas corregir",
                 foreground='blue'
@@ -5057,7 +5776,7 @@ class CloneDialog:
             email_data['var'].set(False)
     
     def start_cloning(self):
-        """Iniciar el proceso de clonación"""
+        """Iniciar el proceso de clonación SIN CERRAR la ventana"""
         mode = self.clone_mode.get()
         
         if mode == "correcciones":
@@ -5073,21 +5792,107 @@ class CloneDialog:
                 return
             
             message = f"¿Deseas eliminar y recrear {len(selected_emails)} boletines?\n\n"
-            message += "Esto eliminará los boletines seleccionados y los volverá a crear."
+            message += "Proceso:\n"
+            message += "1. Se buscarán los boletines en Mautic\n"
+            message += "2. Se eliminarán uno por uno\n"
+            message += "3. Se recrearán con el mismo nombre\n\n"
+            message += "⚠️ Este proceso puede tomar varios minutos.\n"
+            message += "La ventana permanecerá abierta para crear campañas después."
             
         else:  # final
             selected_emails = self.all_emails
-            message = f"¿Deseas clonar TODOS los {len(selected_emails)} boletines sin 'PRUEBA'?\n\n"
-            message += "Esto creará versiones finales de todos los boletines."
+            message = f"¿Deseas clonar TODOS los {len(selected_emails)} boletines?\n\n"
+            message += "Proceso:\n"
+            message += "1. Se clonarán todos los boletines\n"
+            message += "2. Se removerá la palabra 'PRUEBA' del nombre\n\n"
+            message += "⚠️ Este proceso puede tomar varios minutos."
         
         result = messagebox.askyesno("Confirmar Clonación", message, icon='question')
         
         if not result:
             return
         
-        # Ejecutar en thread
-        self.dialog.destroy()
-        self.parent_gui.start_cloning_process(selected_emails, mode)
+        # Deshabilitar botones durante el proceso
+        self.clone_btn.config(state='disabled', text="PROCESANDO...")
+        self.campaign_btn.config(state='disabled')
+        self.select_all_btn.config(state='disabled')
+        self.deselect_all_btn.config(state='disabled')
+        
+        # Mostrar estado
+        self.info_label.config(
+            text=f"Procesando {len(selected_emails)} boletines... Por favor espera",
+            foreground='orange'
+        )
+        
+        # Actualizar la ventana
+        self.dialog.update()
+        
+        # Ejecutar en thread PERO NO CERRAR la ventana
+        thread = threading.Thread(
+            target=self._run_cloning_with_callback,
+            args=(selected_emails, mode)
+        )
+        thread.daemon = True
+        thread.start()
+
+    def _run_cloning_with_callback(self, selected_emails, mode):
+        """Ejecutar clonación y actualizar ventana después"""
+        
+        # Ejecutar el proceso de clonación
+        self.parent_gui.run_cloning_process(selected_emails, mode)
+        
+        # Después de completar, actualizar la interfaz en el hilo principal
+        self.dialog.after(0, lambda: self._on_cloning_complete(mode))
+
+    def _on_cloning_complete(self, mode):
+        """Callback después de completar la clonación"""
+        
+        # Rehabilitar botones
+        self.clone_btn.config(state='normal', text="CLONAR SELECCIONADOS")
+        self.select_all_btn.config(state='normal')
+        self.deselect_all_btn.config(state='normal')
+        
+        # Si es modo correcciones, habilitar botón de campañas
+        if mode == "correcciones":
+            # Verificar si se crearon boletines corregidos
+            if os.path.exists('correcciones.json'):
+                try:
+                    with open('correcciones.json', 'r') as f:
+                        corrected = json.load(f)
+                    
+                    if corrected:
+                        self.campaign_btn.config(state='normal')
+                        self.info_label.config(
+                            text=f"✅ {len(corrected)} boletines corregidos. Ahora puedes crear campañas.",
+                            foreground='green'
+                        )
+                    else:
+                        self.info_label.config(
+                            text="⚠️ No se corrigieron boletines",
+                            foreground='orange'
+                        )
+                except:
+                    self.info_label.config(
+                        text="⚠️ Error cargando correcciones",
+                        foreground='red'
+                    )
+            else:
+                self.info_label.config(
+                    text="⚠️ No se encontró archivo de correcciones",
+                    foreground='orange'
+                )
+        else:
+            self.info_label.config(
+                text="✅ Clonación final completada",
+                foreground='green'
+            )
+        
+        messagebox.showinfo(
+            "Proceso Completado",
+            "La clonación ha finalizado.\n\n" +
+            ("Ahora puedes crear campañas usando el botón 'CREAR CAMPAÑAS'" if mode == "correcciones" else 
+            "Los boletines finales están listos en emails_finales.json")
+        )
     
     def create_campaigns_for_corrections(self):
         """Crear campañas para los boletines corregidos"""
@@ -5247,10 +6052,14 @@ class EstablishmentProcessor:
                 
                 all_success = True
                 for bulletin_type in bulletin_types:
-                    if not self.mautic.create_email_for_establishment(
+                    # Capturar el ID retornado
+                    email_id = self.mautic.create_email_for_establishment(
                         establishment_name, image_url, img_width, img_height, bulletin_type, field_alias
-                    ):
+                    )
+                    
+                    if not email_id:
                         all_success = False
+                        self.log(f"   ⚠️ Error creando boletín {bulletin_type}")
                 
                 if all_success:
                     success_count += 1

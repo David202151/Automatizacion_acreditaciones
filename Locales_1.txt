@@ -1,0 +1,17 @@
+Anatto: anatto_txt
+Andes Visión: andes_vision_txt
+Bikes UIO: bikes_uio_txt
+Chilli Beans: chilli_beans_txt
+Cute Is K-Beauty Shop: cute_is_kbeauty_sho_txt
+Gigi Deco: gigi_deco_txt
+Hacienda La Danesa: hacienda_la_danesa_txt
+Hilton Colon Quito: hilton_colon_quito_txt
+Hotel Hampton: hampton_by_hilton_txt
+Importadora Tomebamba: importadora_tomebam_txt
+KaoSport: kao_sport_center_txt
+Kramba Boutique: kramba_boutique_txt
+Pavarotti: pavarotti_txt
+Proauto: proauto_txt
+Renova: renova_txt
+Supermercado Del Colchon: supermercado_del_co_txt
+Ultrabox: ultrabox_txt
