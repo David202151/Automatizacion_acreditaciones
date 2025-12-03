@@ -426,7 +426,15 @@ class AutomationGUI:
             width=20
         )
         self.clone_button.grid(row=0, column=3, padx=5)
-
+        # Botón para crear segmentos
+        self.segments_button = ttk.Button(
+            main_button_container,
+            text="CREAR SEGMENTOS",
+            command=self.create_segments,
+            width=20,
+            state='disabled'  # Se habilita después de crear boletines
+        )
+        self.segments_button.grid(row=0, column=4, padx=5)
         # Botón para cerrar
         self.close_button = ttk.Button(
             main_button_container,
@@ -434,7 +442,7 @@ class AutomationGUI:
             command=self.root.quit,
             width=15
         )
-        self.close_button.grid(row=0, column=4, padx=5)
+        self.close_button.grid(row=0, column=5, padx=5)
 
         
         # Label informativo sobre las campañas
@@ -1413,6 +1421,7 @@ class AutomationGUI:
             if Config.CREATED_EMAILS:
                 self.emails_created = True
                 self.campaign_button.config(state='normal')
+                self.segments_button.config(state='normal')
                 self.log_message("\n✅ Boletines creados exitosamente")
                 self.log_message("Ahora puedes revisar los boletines en Mautic")
                 self.log_message("Cuando estés listo, presiona 'CREAR CAMPAÑAS'")
@@ -1681,6 +1690,100 @@ class AutomationGUI:
                     f"El archivo ha sido eliminado.\n\nBackup creado: {backup_name}")
             except Exception as e:
                 messagebox.showerror("Error", f"Error eliminando archivo: {str(e)}")
+
+    def create_segments(self):
+        """Crear segmentos para los boletines creados"""
+        if not Config.CREATED_EMAILS:
+            # Intentar cargar desde archivo
+            try:
+                with open('emails_creados.json', 'r') as f:
+                    Config.CREATED_EMAILS = json.load(f)
+            except:
+                messagebox.showwarning("Sin boletines", 
+                    "No hay boletines creados. Primero crea los boletines.")
+                return
+        
+        # Confirmación
+        num_segments = len(Config.CREATED_EMAILS)
+        result = messagebox.askyesno("Confirmar Creación de Segmentos", 
+            f"¿Deseas crear {num_segments} segmentos?\n\n" +
+            "Se creará un segmento para cada boletín con los filtros:\n" +
+            "• Campo personalizado ≠ 0\n" +
+            "• Tipo de socio = Personal/Corporativo\n" +
+            "• Fecha ejecución = Hoy")
+        
+        if not result:
+            return
+        
+        self.segments_button.config(state='disabled')
+        self.progress_bar.start(10)
+        self.current_status.set("Creando segmentos... Por favor espera")
+        
+        # Limpiar log
+        self.log_text.delete(1.0, tk.END)
+        self.log_message("="*60)
+        self.log_message("INICIANDO CREACIÓN DE SEGMENTOS")
+        self.log_message(f"Segmentos a crear: {num_segments}")
+        self.log_message("="*60 + "\n")
+        
+        # Ejecutar en thread
+        thread = threading.Thread(target=self.run_segment_creation)
+        thread.daemon = True
+        thread.start()
+
+    def run_segment_creation(self):
+        """Ejecutar la creación de segmentos"""
+        try:
+            creator = MauticSegmentCreator(
+                Config.MAUTIC_URL,
+                Config.MAUTIC_USERNAME,
+                Config.MAUTIC_PASSWORD,
+                self
+            )
+            
+            creator.setup_driver(headless=False)
+            
+            if not creator.login():
+                raise Exception("No se pudo hacer login en Mautic")
+            
+            success_count = 0
+            failed_segments = []
+            
+            for email_info in Config.CREATED_EMAILS:
+                if creator.create_segment_for_email(email_info):
+                    success_count += 1
+                else:
+                    failed_segments.append(email_info['name'])
+            
+            creator.close()
+            
+            self.log_message("\n" + "="*60)
+            self.log_message(f"SEGMENTOS CREADOS: {success_count}/{len(Config.CREATED_EMAILS)}")
+            
+            if failed_segments:
+                self.log_message("\nSegmentos que no se pudieron crear:")
+                for segment in failed_segments:
+                    self.log_message(f"   - {segment}")
+            
+            self.log_message("="*60)
+            
+            if success_count > 0:
+                self.root.after(0, lambda: messagebox.showinfo(
+                    "Proceso Completado", 
+                    f"Se han creado {success_count} segmentos exitosamente.\n\n" +
+                    "Revisa los segmentos en Mautic."
+                ))
+            
+        except Exception as e:
+            self.log_message(f"ERROR: {str(e)}")
+            import traceback
+            self.log_message(f"Detalle: {traceback.format_exc()}")
+            self.root.after(0, lambda: messagebox.showerror("Error", 
+                                                        f"Error creando segmentos:\n\n{str(e)}"))
+        finally:
+            self.progress_bar.stop()
+            self.current_status.set("Proceso completado")
+            self.segments_button.config(state='normal')
 
 # ======================== UPLOADER CLOUDFLARE R2 ========================
 class CloudflareR2Uploader:
@@ -5380,7 +5483,39 @@ class MauticEmailCloner:
                 self.log(f"   ✓ Nombre cambiado a: {clone_name}")
             
             time.sleep(1)
-            
+            # PASO 9.5: ACTIVAR EL BOLETÍN (NUEVO PASO)
+            self.log("   PASO 9.5: Activando el boletín clonado...")
+            time.sleep(1)
+
+            publish_activated = self.driver.execute_script("""
+                // Buscar el switch de Published
+                var publishedSwitch = document.getElementById('emailform_isPublished_1');
+                
+                if (publishedSwitch) {
+                    if (!publishedSwitch.checked) {
+                        publishedSwitch.click();
+                        console.log('Boletín activado (Published = Yes)');
+                        return true;
+                    } else {
+                        console.log('Boletín ya estaba activo');
+                        return true;
+                    }
+                }
+                
+                // Método alternativo si el ID es diferente
+                var radioYes = document.querySelector('input[type="radio"][value="1"][name*="isPublished"]');
+                if (radioYes && !radioYes.checked) {
+                    radioYes.click();
+                    return true;
+                }
+                
+                return false;
+            """)
+
+            if publish_activated:
+                self.log("   ✓ Boletín marcado como activo")
+            else:
+                self.log("   ⚠️ No se pudo activar automáticamente")
             # ===== PASO 10: GUARDAR EL BOLETÍN CLONADO =====
             self.log("   PASO 10: Guardando boletín clonado...")
             
@@ -5482,6 +5617,527 @@ class MauticEmailCloner:
             except:
                 pass
 
+# ======================== MAUTIC SEGMENT CREATOR ========================
+class MauticSegmentCreator:
+    def __init__(self, base_url, username, password, gui=None):
+        self.base_url = base_url.rstrip('/')
+        self.username = username
+        self.password = password
+        self.driver = None
+        self.wait = None
+        self.is_logged_in = False
+        self.gui = gui
+    
+    def log(self, message):
+        """Log con GUI si está disponible"""
+        print(message)
+        if self.gui:
+            self.gui.log_message(message)
+    
+    def setup_driver(self, headless=False):
+        """Configurar Chrome con Selenium"""
+        self.log("Iniciando navegador Chrome para segmentos...")
+        
+        import tempfile
+        
+        chrome_options = Options()
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        
+        temp_dir = tempfile.mkdtemp(prefix="mautic_chrome_")
+        chrome_options.add_argument(f'--user-data-dir={temp_dir}')
+        
+        if headless:
+            chrome_options.add_argument('--headless')
+        
+        chrome_options.add_argument('--start-maximized')
+        
+        try:
+            service = Service(ChromeDriverManager().install())
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            
+            self.driver.implicitly_wait(3)
+            self.wait = WebDriverWait(self.driver, 15)
+            self.driver.set_page_load_timeout(30)
+            
+            self.log("Navegador configurado correctamente")
+            
+        except Exception as e:
+            self.log(f"Error iniciando Chrome: {str(e)}")
+            raise
+    
+    def login(self):
+        """Login en Mautic"""
+        self.log("Iniciando login en Mautic...")
+        
+        try:
+            login_url = f"{self.base_url}/s/login"
+            self.driver.get(login_url)
+            
+            if 'dashboard' in self.driver.current_url or 'segments' in self.driver.current_url:
+                self.log("Ya estás logueado!")
+                self.is_logged_in = True
+                return True
+            
+            username_field = self.wait.until(
+                EC.presence_of_element_located((By.ID, "username"))
+            )
+            password_field = self.driver.find_element(By.ID, "password")
+            
+            username_field.clear()
+            username_field.send_keys(self.username)
+            password_field.clear()
+            password_field.send_keys(self.password)
+            password_field.send_keys(Keys.RETURN)
+            
+            WebDriverWait(self.driver, 10).until(
+                lambda driver: 'login' not in driver.current_url.lower()
+            )
+            
+            self.log("Login exitoso!")
+            self.is_logged_in = True
+            return True
+            
+        except Exception as e:
+            self.log(f"Error durante login: {str(e)}")
+            return False
+    def create_segment_for_email(self, email_info):
+        """Crear un segmento para un boletín específico con TRES filtros"""
+        try:
+            from selenium.webdriver.common.keys import Keys
+            from selenium.webdriver.common.by import By
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+            from selenium.webdriver.support.ui import Select
+            
+            # Extraer información del boletín
+            email_name = email_info.get('name', '')
+            establishment = email_info.get('establishment', '')
+            email_type = email_info.get('type', 'personal')
+            field_alias = email_info.get('field', '')
+            
+            # Quitar "PRUEBA-" del nombre del segmento
+            segment_name = email_name
+            if segment_name.startswith('PRUEBA-'):
+                segment_name = segment_name.replace('PRUEBA-', '', 1)
+            elif 'PRUEBA' in segment_name:
+                import re
+                segment_name = re.sub(r'PRUEBA\d*[-_]?', '', segment_name)
+            
+            # Preparar valores
+            field_search = field_alias.replace('_', ' ') if field_alias else establishment.lower()
+            if not field_search.endswith(' txt'):
+                field_search = field_search + ' txt'
+            
+            tipo_socio_value = "Personal" if email_type == "personal" else "Corporativo"
+            
+            # Obtener fecha actual en formato YYYY-MM-DD
+            from datetime import datetime
+            today_date = datetime.now().strftime('%Y-%m-%d')
+            
+            self.log(f"\n🔨 Creando segmento: {segment_name}")
+            self.log(f"   Campo: {field_search}")
+            self.log(f"   Tipo: {tipo_socio_value}")
+            self.log(f"   Fecha: {today_date}")
+            
+            # PASO 1: Navegar
+            self.driver.get(f"{self.base_url}/s/segments/new")
+            time.sleep(3)
+            
+            # PASO 2: Información básica
+            self.driver.execute_script("""
+                var segmentName = arguments[0];
+                var nameField = document.getElementById('leadlist_name');
+                if (nameField) {
+                    nameField.value = segmentName;
+                    nameField.dispatchEvent(new Event('change', {bubbles: true}));
+                }
+            """, segment_name)
+            self.log("   ✓ Nombre configurado")
+            time.sleep(2)
+            
+            # PASO 3: Ir a Filters
+            self.driver.execute_script("""
+                var filtersTab = document.querySelector('a[href="#filters"]');
+                if (filtersTab) filtersTab.click();
+            """)
+            time.sleep(3)
+            
+            # =======================================
+            # FILTRO 1: Campo personalizado != 0
+            # =======================================
+            self.log(f"   📌 FILTRO 1: {field_search} != 0")
+            
+            if not self._add_filter_from_choose_one(field_search, '!=', '0'):
+                self.log("   ❌ Error en Filtro 1")
+                return False
+            
+            self.log("   ✅ Filtro 1 completo")
+            time.sleep(2)
+            
+            # =======================================
+            # FILTRO 2: Tipo de socio = Personal/Corporativo
+            # =======================================
+            self.log(f"   📌 FILTRO 2: Tipo de socio = {tipo_socio_value}")
+            
+            if not self._add_filter_from_choose_one('tipo de socio', '=', tipo_socio_value):
+                self.log("   ❌ Error en Filtro 2")
+                return False
+            
+            self.log("   ✅ Filtro 2 completo")
+            time.sleep(2)
+            
+            # =======================================
+            # FILTRO 3: Fecha ejecución = fecha actual
+            # =======================================
+            self.log(f"   📌 FILTRO 3: Fecha ejecución = {today_date}")
+            
+            if not self._add_filter_from_choose_one('fecha ejec', '=', today_date):
+                self.log("   ❌ Error en Filtro 3")
+                return False
+            
+            self.log("   ✅ Filtro 3 completo")
+            time.sleep(2)
+            
+            # =======================================
+            # VERIFICACIÓN FINAL (solo informativa)
+            # =======================================
+            final_check = self.driver.execute_script("""
+                var filterRows = document.querySelectorAll('select[name*="[field]"]');
+                var filtersInfo = [];
+                
+                for (var i = 0; i < filterRows.length; i++) {
+                    var selectedOption = filterRows[i].options[filterRows[i].selectedIndex];
+                    
+                    // Obtener operador
+                    var operatorSelects = document.querySelectorAll('select[name*="[operator]"]');
+                    var operator = operatorSelects[i] ? operatorSelects[i].value : 'unknown';
+                    
+                    // Obtener valor
+                    var valueInputs = document.querySelectorAll('input[name*="[properties][filter]"]');
+                    var value = valueInputs[i] ? valueInputs[i].value : 'unknown';
+                    
+                    filtersInfo.push({
+                        index: i + 1,
+                        field: selectedOption ? selectedOption.text : 'none',
+                        operator: operator,
+                        value: value
+                    });
+                }
+                
+                return {
+                    count: filterRows.length,
+                    filters: filtersInfo
+                };
+            """)
+            
+            self.log(f"\n   🔍 VERIFICACIÓN FINAL:")
+            self.log(f"      Total de filtros: {final_check['count']}")
+            
+            for filter_info in final_check['filters']:
+                self.log(f"      Filtro {filter_info['index']}: {filter_info['field']} {filter_info['operator']} {filter_info['value']}")
+            
+            # =======================================
+            # GUARDAR (automático)
+            # =======================================
+            self.log("\n   💾 Guardando segmento...")
+            
+            save_clicked = self.driver.execute_script("""
+                var buttons = document.querySelectorAll('button');
+                for (var i = 0; i < buttons.length; i++) {
+                    var text = buttons[i].textContent.trim();
+                    if (text.includes('Save') && text.includes('Close')) {
+                        buttons[i].click();
+                        return true;
+                    }
+                }
+                return false;
+            """)
+            
+            if save_clicked:
+                self.log(f"   ✅ Segmento '{segment_name}' guardado exitosamente")
+                time.sleep(3)
+                return True
+            else:
+                self.log("   ❌ Error al guardar")
+                return False
+                
+        except Exception as e:
+            self.log(f"   ❌ Error: {str(e)}")
+            import traceback
+            self.log(traceback.format_exc())
+            return False
+
+    def _add_filter_from_choose_one(self, field_name, operator, value):
+        """Agregar un filtro usando el selector 'Choose one...' con verificaciones robustas"""
+        try:
+            from selenium.webdriver.common.keys import Keys
+            from selenium.webdriver.common.by import By
+            from selenium.webdriver.support.ui import Select
+            
+            self.log(f"      Buscando selector 'Choose one...'")
+            
+            # PASO 1: Encontrar el ÚLTIMO dropdown "Choose one..." disponible
+            choose_one_found = self.driver.execute_script("""
+                // Buscar TODOS los dropdowns que digan "Choose one..."
+                var allChosenContainers = document.querySelectorAll('.chosen-container');
+                var chooseOneDropdowns = [];
+                
+                for (var i = 0; i < allChosenContainers.length; i++) {
+                    var container = allChosenContainers[i];
+                    var spanText = container.querySelector('.chosen-single span');
+                    
+                    if (spanText && spanText.textContent.trim() === 'Choose one...') {
+                        // Verificar que NO sea el dropdown de Category
+                        var prevSelect = container.previousElementSibling;
+                        if (prevSelect && prevSelect.id !== 'leadlist_category') {
+                            chooseOneDropdowns.push({
+                                container: container,
+                                index: i
+                            });
+                        }
+                    }
+                }
+                
+                console.log('Dropdowns "Choose one..." encontrados:', chooseOneDropdowns.length);
+                
+                if (chooseOneDropdowns.length > 0) {
+                    // Tomar el ÚLTIMO dropdown "Choose one..."
+                    var lastDropdown = chooseOneDropdowns[chooseOneDropdowns.length - 1];
+                    lastDropdown.container.setAttribute('data-active-filter', 'true');
+                    
+                    return {
+                        success: true,
+                        count: chooseOneDropdowns.length,
+                        index: lastDropdown.index
+                    };
+                }
+                
+                return {
+                    success: false,
+                    count: 0
+                };
+            """)
+            
+            if not choose_one_found['success']:
+                self.log(f"      ❌ No se encontró 'Choose one...' (total: {choose_one_found['count']})")
+                return False
+            
+            self.log(f"      ✓ 'Choose one...' encontrado (posición {choose_one_found['index']})")
+            time.sleep(1)
+            
+            # PASO 2: Abrir el dropdown
+            self.driver.execute_script("""
+                var dropdown = document.querySelector('[data-active-filter="true"]');
+                if (dropdown) {
+                    var clickTarget = dropdown.querySelector('.chosen-single');
+                    if (clickTarget) {
+                        clickTarget.scrollIntoView({block: 'center'});
+                        clickTarget.click();
+                    }
+                }
+            """)
+            time.sleep(1)
+            
+            # PASO 3: Escribir en el campo de búsqueda
+            self.driver.execute_script("""
+                var fieldName = arguments[0];
+                var dropdown = document.querySelector('[data-active-filter="true"]');
+                
+                if (dropdown) {
+                    var input = dropdown.querySelector('input[type="text"]');
+                    if (input) {
+                        input.focus();
+                        input.value = fieldName;
+                        input.dispatchEvent(new Event('input', {bubbles: true}));
+                        input.dispatchEvent(new KeyboardEvent('keyup', {bubbles: true}));
+                    }
+                }
+            """, field_name)
+            time.sleep(2)
+            
+            # PASO 4: Seleccionar la opción correcta
+            option_selected = self.driver.execute_script("""
+                var fieldName = arguments[0];
+                var dropdown = document.querySelector('[data-active-filter="true"]');
+                
+                if (!dropdown) {
+                    return {success: false, reason: 'dropdown_not_found'};
+                }
+                
+                var options = dropdown.querySelectorAll('.chosen-results li.active-result');
+                var searchTerms = fieldName.toLowerCase().split(' ');
+                
+                console.log('Opciones encontradas:', options.length);
+                
+                for (var i = 0; i < options.length; i++) {
+                    var optionText = options[i].textContent.trim().toLowerCase();
+                    console.log('Opción ' + i + ':', optionText);
+                    
+                    // Verificar que todos los términos estén en el texto
+                    var allMatch = true;
+                    for (var j = 0; j < searchTerms.length; j++) {
+                        if (!optionText.includes(searchTerms[j])) {
+                            allMatch = false;
+                            break;
+                        }
+                    }
+                    
+                    if (allMatch) {
+                        console.log('✓ Coincidencia encontrada');
+                        options[i].scrollIntoView({block: 'center'});
+                        
+                        // Múltiples métodos de click
+                        options[i].click();
+                        options[i].dispatchEvent(new MouseEvent('click', {bubbles: true}));
+                        options[i].dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
+                        options[i].dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+                        
+                        return {
+                            success: true,
+                            text: options[i].textContent.trim()
+                        };
+                    }
+                }
+                
+                return {
+                    success: false,
+                    reason: 'no_match',
+                    optionsCount: options.length
+                };
+            """, field_name)
+            
+            if not option_selected['success']:
+                self.log(f"      ❌ No se seleccionó opción: {option_selected.get('reason')}")
+                self.log(f"      Opciones disponibles: {option_selected.get('optionsCount', 0)}")
+                return False
+            
+            self.log(f"      ✓ Opción seleccionada: {option_selected['text']}")
+            
+            # Limpiar el atributo para el próximo filtro
+            self.driver.execute_script("""
+                var dropdown = document.querySelector('[data-active-filter="true"]');
+                if (dropdown) {
+                    dropdown.removeAttribute('data-active-filter');
+                }
+            """)
+            
+            time.sleep(2)
+            
+            # PASO 5: Configurar operador (usar el ÚLTIMO select de operador)
+            self.log(f"      Configurando operador: {operator}")
+            try:
+                operator_selects = self.driver.find_elements(By.CSS_SELECTOR, 'select[name*="[operator]"]')
+                if operator_selects:
+                    select_obj = Select(operator_selects[-1])  # Usar el último
+                    select_obj.select_by_value(operator)
+                    
+                    # Verificar que se seleccionó correctamente
+                    time.sleep(1)
+                    selected_value = select_obj.first_selected_option.get_attribute('value')
+                    if selected_value == operator:
+                        self.log(f"      ✓ Operador configurado correctamente: {operator}")
+                    else:
+                        self.log(f"      ⚠️ Operador no coincide: esperado={operator}, actual={selected_value}")
+                else:
+                    self.log(f"      ⚠️ No se encontraron selects de operador")
+            except Exception as e:
+                self.log(f"      ⚠️ Error configurando operador: {e}")
+            
+            time.sleep(1)
+            
+            # PASO 6: Configurar valor (usar el ÚLTIMO input de valor) - MÉTODO ROBUSTO
+            self.log(f"      Configurando valor: {value}")
+            try:
+                value_inputs = self.driver.find_elements(By.CSS_SELECTOR, 'input[name*="[properties][filter]"]')
+                if value_inputs:
+                    target_input = value_inputs[-1]  # Usar el último
+                    
+                    # Hacer scroll al elemento
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", target_input)
+                    time.sleep(0.5)
+                    
+                    # Click en el input
+                    target_input.click()
+                    time.sleep(0.5)
+                    
+                    # Limpiar el campo múltiples veces
+                    target_input.clear()
+                    time.sleep(0.3)
+                    
+                    # Usar Ctrl+A y Delete para asegurar limpieza
+                    target_input.send_keys(Keys.CONTROL + 'a')
+                    time.sleep(0.2)
+                    target_input.send_keys(Keys.DELETE)
+                    time.sleep(0.3)
+                    
+                    # Método 1: Usar send_keys
+                    target_input.send_keys(value)
+                    time.sleep(0.5)
+                    
+                    # Método 2: Usar JavaScript como respaldo
+                    self.driver.execute_script("""
+                        var input = arguments[0];
+                        var value = arguments[1];
+                        
+                        input.value = value;
+                        input.dispatchEvent(new Event('input', {bubbles: true}));
+                        input.dispatchEvent(new Event('change', {bubbles: true}));
+                        input.dispatchEvent(new KeyboardEvent('keyup', {bubbles: true}));
+                    """, target_input, value)
+                    
+                    time.sleep(0.5)
+                    
+                    # Verificar que el valor se estableció correctamente
+                    actual_value = target_input.get_attribute('value')
+                    if actual_value == value:
+                        self.log(f"      ✓ Valor configurado correctamente: {value}")
+                    else:
+                        self.log(f"      ⚠️ Valor no coincide: esperado={value}, actual={actual_value}")
+                        
+                        # Intentar una vez más si falló
+                        self.log(f"      Reintentando establecer valor...")
+                        target_input.clear()
+                        time.sleep(0.3)
+                        target_input.send_keys(value)
+                        time.sleep(0.5)
+                        
+                        actual_value = target_input.get_attribute('value')
+                        if actual_value == value:
+                            self.log(f"      ✓ Valor configurado en segundo intento: {value}")
+                        else:
+                            self.log(f"      ❌ No se pudo configurar el valor correctamente")
+                    
+                    # Presionar TAB para confirmar
+                    target_input.send_keys(Keys.TAB)
+                    time.sleep(0.5)
+                    
+                else:
+                    self.log(f"      ⚠️ No se encontraron inputs de valor")
+            except Exception as e:
+                self.log(f"      ⚠️ Error configurando valor: {e}")
+            
+            time.sleep(1)
+            return True
+            
+        except Exception as e:
+            self.log(f"      ❌ Error en _add_filter_from_choose_one: {str(e)}")
+            import traceback
+            self.log(traceback.format_exc())
+            return False
+        
+        
+    def close(self):
+        """Cerrar navegador"""
+        if self.driver:
+            self.log("Cerrando navegador...")
+            try:
+                self.driver.quit()
+            except:
+                pass
 
 # ======================== CLONE DIALOG ========================
 class CloneDialog:

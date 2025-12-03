@@ -15,3 +15,53 @@ Proauto: proauto_txt
 Renova: renova_txt
 Supermercado Del Colchon: supermercado_del_co_txt
 Ultrabox: ultrabox_txt
+
+Fecha 11/11/2025
+
+Anatto: anatto_txt
+Andes Visión: andes_vision_txt
+Cavanni Design: cavanni_design_txt
+Chilli Beans: chilli_beans_txt
+Ferragamo: PENDIENTE
+Gigi Deco: gigi_deco_txt
+Hacienda La Danesa: hacienda_la_danesa_txt
+Hacienda Las Cuevas Terra Lodge: hacienda_las_cuevas_txt
+Hampton by Hilton: hampton_by_hilton_txt
+Muebles Vera Vasquez: muebles_vera_vasque_txt
+NYS Collection: nys_collection_txt
+Pasta y Basta: pasta_y_basta_txt
+Pinto: pinto_txt
+Proauto: proauto_txt
+Quito Motors: PENDIENTE
+Renaissence: renaissence_txt
+Renova: renova_txt
+Seguros del Pichincha: seguros_del_pichinc_txt
+Supermercado del Colchón: supermercado_del_co_txt
+Ultrabox: ultrabox_txt
+
+
+Fecha 18/11/2025
+
+3500 Alejandro Huertas: 3500_alejandro_huer_txt
+Alanna Home: alanna_home_txt    ok
+Anatto: anatto_txt     ok    
+Andes Visión: andes_vision_txt    ok 
+Ferragamo: ferragamo_txt       ok 
+Fit&Flex: fityflex_valle_de_l_txt     OJO    
+Hacienda La Danesa: hacienda_la_danesa_txt    ok   
+Hacienda Las Cuevas Terra Lodge: hacienda_las_cuevas_txt   ok
+Hampton by Hilton: hampton_by_hilton_txt   ok
+Mami T: mami_t_txt       ok
+Muebles Vera Vasquez: muebles_vera_vasque_txt   ok
+NYS Collection: nys_collection_txt     ok
+Pasta y Basta: pasta_y_basta_txt       ok
+Pinto: pinto_txt     ok   
+Renova: renova_txt    ok
+Samari: samari_txt     ok
+Supermercado del Colchón: supermercado_del_co_txt   ok
+Ultrabox: ultrabox_txt     ok
+
+
+
+
+
