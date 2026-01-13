@@ -43,23 +43,72 @@ Ultrabox: ultrabox_txt
 Fecha 18/11/2025
 
 3500 Alejandro Huertas: 3500_alejandro_huer_txt
-Alanna Home: alanna_home_txt    ok
-Anatto: anatto_txt     ok    
-Andes Visión: andes_vision_txt    ok 
-Ferragamo: ferragamo_txt       ok 
-Fit&Flex: fityflex_valle_de_l_txt     OJO    
-Hacienda La Danesa: hacienda_la_danesa_txt    ok   
-Hacienda Las Cuevas Terra Lodge: hacienda_las_cuevas_txt   ok
-Hampton by Hilton: hampton_by_hilton_txt   ok
-Mami T: mami_t_txt       ok
-Muebles Vera Vasquez: muebles_vera_vasque_txt   ok
-NYS Collection: nys_collection_txt     ok
-Pasta y Basta: pasta_y_basta_txt       ok
-Pinto: pinto_txt     ok   
-Renova: renova_txt    ok
-Samari: samari_txt     ok
-Supermercado del Colchón: supermercado_del_co_txt   ok
-Ultrabox: ultrabox_txt     ok
+Alanna Home: alanna_home_txt  
+Anatto: anatto_txt        
+Andes Visión: andes_vision_txt    
+Ferragamo: ferragamo_txt      
+Fit&Flex: fityflex_valle_de_l_txt        
+Hacienda La Danesa: hacienda_la_danesa_txt     
+Hacienda Las Cuevas Terra Lodge: hacienda_las_cuevas_txt   
+Hampton by Hilton: hampton_by_hilton_txt
+Mami T: mami_t_txt     
+Muebles Vera Vasquez: muebles_vera_vasque_txt  
+NYS Collection: nys_collection_txt  
+Pasta y Basta: pasta_y_basta_txt    
+Pinto: pinto_txt      
+Renova: renova_txt   
+Samari: samari_txt    
+Supermercado del Colchón: supermercado_del_co_txt  
+Ultrabox: ultrabox_txt   
+
+
+Fecha 02/12/2025
+
+3500 Alejandro Huertas: 3500_alejandro_huer_txt
+Alanna Home: alanna_home_txt  
+Anatto: anatto_txt
+Andes Visión: andes_vision_txt
+BYD: Byd_txt
+El Jardín Lodge: El_Jardin_Lodge_txt
+Electrocenter: Electrocenter_txt
+Energy Control: Energy_Control_txt
+Fit & Flex: fityflex_valle_de_l_txt
+Hacienda Las Cuevas Terra Lodge: hacienda_las_cuevas_txt
+Hampton by Hilton: hampton_by_hilton_txt
+Hotel Boutique Mitad del Mundo: hotel_boutique_mita_txt
+Keramikos: keramikos_txt
+Muebles Vera Vazquez: muebles_vera_vasque_txt
+Pasta y Basta: pasta_y_basta_txt
+Proauto: proauto_txt
+Renova: renova_txt
+Supermercado del Colchón: supermercado_del_co_txt
+Ultrabox: ultrabox_txt 
+
+
+Fecha 09/12/2025
+
+3500 Alejandro Huertas: 3500_alejandro_huer_txt
+Alanna Home: alanna_home_txt  
+Andes Visión: andes_vision_txt
+El Jardín Lodge: el_jardin_lodge_txt
+Ferragamo: ferragamo_txt   
+Fit & Flex: fityflex_valle_de_l_txt
+Hacienda Las Cuevas Terra Lodge: hacienda_las_cuevas_txt
+Hampton by Hilton: hampton_by_hilton_txt
+Mami T: mami_t_txt 
+Renova: renova_txt
+Supermercado del Colchón: supermercado_del_co_txt
+
+
+
+
+
+
+
+
+
+
+
 
 
 

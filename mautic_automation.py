@@ -199,7 +199,33 @@ class AutomationGUI:
             except Exception as e:
                 self.log_message(f"Error leyendo cache: {str(e)}")
         
+        # Verificar si hay boletines finales y segmentos para habilitar el botón
+        self.check_final_campaigns_ready()
+
         return False
+
+    def check_final_campaigns_ready(self):
+        """Verificar si hay boletines finales y segmentos para habilitar el botón de envíos finales"""
+        has_finals = os.path.exists('emails_finales.json')
+        has_segments = os.path.exists('segmentos_creados.json')
+
+        if has_finals and has_segments:
+            try:
+                with open('emails_finales.json', 'r', encoding='utf-8') as f:
+                    finals = json.load(f)
+                with open('segmentos_creados.json', 'r', encoding='utf-8') as f:
+                    segments = json.load(f)
+
+                if finals and segments:
+                    self.final_campaigns_button.config(state='normal')
+                    self.log_message(f"\n✓ Detectados {len(finals)} boletines finales y {len(segments)} segmentos")
+                    self.log_message("  Botón 'ENVÍOS FINALES' habilitado")
+                    return True
+            except Exception as e:
+                self.log_message(f"⚠️ Error verificando archivos finales: {str(e)}")
+
+        return False
+
     # Agregar este método para manejar el botón de carga manual
     def load_pending_campaigns(self):
         """Cargar manualmente campañas pendientes"""
@@ -435,6 +461,17 @@ class AutomationGUI:
             state='disabled'  # Se habilita después de crear boletines
         )
         self.segments_button.grid(row=0, column=4, padx=5)
+
+        # Botón para envíos finales (campañas con boletines finales)
+        self.final_campaigns_button = ttk.Button(
+            main_button_container,
+            text="ENVÍOS FINALES",
+            command=self.create_final_campaigns,
+            width=20,
+            state='disabled'  # Se habilita cuando existan emails_finales.json y segmentos_creados.json
+        )
+        self.final_campaigns_button.grid(row=0, column=5, padx=5)
+
         # Botón para cerrar
         self.close_button = ttk.Button(
             main_button_container,
@@ -442,7 +479,7 @@ class AutomationGUI:
             command=self.root.quit,
             width=15
         )
-        self.close_button.grid(row=0, column=5, padx=5)
+        self.close_button.grid(row=0, column=6, padx=5)
 
         
         # Label informativo sobre las campañas
@@ -883,9 +920,12 @@ class AutomationGUI:
                     # Combinar existentes con nuevos
                     all_finals = existing_finals + cloned_emails
                     
-                    with open('emails_finales.json', 'w') as f:
-                        json.dump(all_finals, f, indent=2)
+                    with open('emails_finales.json', 'w', encoding='utf-8') as f:
+                        json.dump(all_finals, f, indent=2, ensure_ascii=False)
                     self.log_message(f"\n✅ Información guardada en emails_finales.json")
+
+                    # Verificar si se puede habilitar el botón de envíos finales
+                    self.root.after(0, self.check_final_campaigns_ready)
             
             cloner.close()
             
@@ -1197,14 +1237,14 @@ class AutomationGUI:
                 # Vista previa del campo
                 preview_label = ttk.Label(manual_frame, text="", foreground='blue')
                 preview_label.grid(row=row_idx, column=2, padx=5, pady=2, sticky='w')
-                
+
                 # Actualizar vista previa cuando cambie el campo
                 def update_preview(var, label=preview_label):
                     preview = f"{{{{contactfield={var.get()}_txt}}}}"
                     label.config(text=preview)
-                
-                field_var.trace('w', lambda *args, var=field_var: update_preview(var))
-                update_preview(field_var)  # Actualización inicial
+
+                field_var.trace('w', lambda *args, var=field_var, lbl=preview_label: update_preview(var, lbl))
+                update_preview(field_var, preview_label)  # Actualización inicial
                 
                 self.field_entries[folder_name] = field_var
                 row_idx += 1
@@ -1740,38 +1780,54 @@ class AutomationGUI:
                 Config.MAUTIC_PASSWORD,
                 self
             )
-            
+
             creator.setup_driver(headless=False)
-            
+
             if not creator.login():
                 raise Exception("No se pudo hacer login en Mautic")
-            
+
             success_count = 0
             failed_segments = []
-            
+            created_segments = []  # Lista para rastrear segmentos creados
+
             for email_info in Config.CREATED_EMAILS:
-                if creator.create_segment_for_email(email_info):
+                segment_info = creator.create_segment_for_email(email_info)
+                if segment_info:
                     success_count += 1
+                    created_segments.append(segment_info)
                 else:
                     failed_segments.append(email_info['name'])
-            
+
             creator.close()
-            
+
             self.log_message("\n" + "="*60)
             self.log_message(f"SEGMENTOS CREADOS: {success_count}/{len(Config.CREATED_EMAILS)}")
-            
+
             if failed_segments:
                 self.log_message("\nSegmentos que no se pudieron crear:")
                 for segment in failed_segments:
                     self.log_message(f"   - {segment}")
-            
+
             self.log_message("="*60)
-            
+
+            # Guardar segmentos creados en JSON
+            if created_segments:
+                try:
+                    with open('segmentos_creados.json', 'w', encoding='utf-8') as f:
+                        json.dump(created_segments, f, indent=2, ensure_ascii=False)
+                    self.log_message(f"\n✓ Archivo 'segmentos_creados.json' creado con {len(created_segments)} segmentos")
+
+                    # Verificar si se puede habilitar el botón de envíos finales
+                    self.root.after(0, self.check_final_campaigns_ready)
+                except Exception as e:
+                    self.log_message(f"\n⚠️ Error al guardar JSON de segmentos: {str(e)}")
+
             if success_count > 0:
                 self.root.after(0, lambda: messagebox.showinfo(
-                    "Proceso Completado", 
+                    "Proceso Completado",
                     f"Se han creado {success_count} segmentos exitosamente.\n\n" +
-                    "Revisa los segmentos en Mautic."
+                    "Revisa los segmentos en Mautic.\n\n" +
+                    "Se ha guardado el archivo 'segmentos_creados.json'"
                 ))
             
         except Exception as e:
@@ -1784,6 +1840,270 @@ class AutomationGUI:
             self.progress_bar.stop()
             self.current_status.set("Proceso completado")
             self.segments_button.config(state='normal')
+
+    def cleanup_cache_after_final_campaigns(self, success_count):
+        """Limpiar archivos de caché después de completar envíos finales"""
+        message = f"¡Proceso completado exitosamente!\n\n"
+        message += f"Se han creado {success_count} campañas finales.\n"
+        message += f"Las campañas están listas para envío en Mautic.\n\n"
+        message += f"Se ha guardado 'campanas_finales_creadas.json'\n\n"
+        message += "─" * 50 + "\n\n"
+        message += "¿Deseas limpiar los archivos de caché?\n\n"
+        message += "Se eliminarán:\n"
+        message += "  • emails_creados.json\n"
+        message += "  • emails_finales.json\n"
+        message += "  • segmentos_creados.json\n\n"
+        message += "✅ Se conservará: campanas_finales_creadas.json\n\n"
+        message += "Esto dejará el sistema listo para el siguiente ciclo."
+
+        result = messagebox.askyesno(
+            "Limpiar Caché",
+            message,
+            icon='question'
+        )
+
+        if result:
+            files_to_delete = [
+                'emails_creados.json',
+                'emails_finales.json',
+                'segmentos_creados.json'
+            ]
+
+            deleted = []
+            not_found = []
+            errors = []
+
+            for filename in files_to_delete:
+                try:
+                    if os.path.exists(filename):
+                        os.remove(filename)
+                        deleted.append(filename)
+                        self.log_message(f"✓ Eliminado: {filename}")
+                    else:
+                        not_found.append(filename)
+                        self.log_message(f"⚠️ No encontrado: {filename}")
+                except Exception as e:
+                    errors.append(f"{filename}: {str(e)}")
+                    self.log_message(f"❌ Error eliminando {filename}: {str(e)}")
+
+            # Mostrar resumen
+            summary = "Limpieza completada:\n\n"
+
+            if deleted:
+                summary += f"✅ Eliminados ({len(deleted)}):\n"
+                for f in deleted:
+                    summary += f"   • {f}\n"
+                summary += "\n"
+
+            if not_found:
+                summary += f"⚠️ No encontrados ({len(not_found)}):\n"
+                for f in not_found:
+                    summary += f"   • {f}\n"
+                summary += "\n"
+
+            if errors:
+                summary += f"❌ Errores ({len(errors)}):\n"
+                for e in errors:
+                    summary += f"   • {e}\n"
+                summary += "\n"
+
+            summary += "El sistema está listo para un nuevo ciclo."
+
+            messagebox.showinfo("Limpieza Completada", summary)
+
+            # Deshabilitar botón de envíos finales si se limpiaron los archivos
+            if 'emails_finales.json' in deleted or 'segmentos_creados.json' in deleted:
+                self.final_campaigns_button.config(state='disabled')
+                self.log_message("\n⚠️ Botón 'ENVÍOS FINALES' deshabilitado (archivos eliminados)")
+        else:
+            messagebox.showinfo(
+                "Proceso Completado",
+                f"Se han creado {success_count} campañas finales exitosamente.\n\n" +
+                "Las campañas están listas para envío en Mautic.\n\n" +
+                "Se ha guardado el archivo 'campanas_finales_creadas.json'\n\n" +
+                "Los archivos de caché se mantienen disponibles."
+            )
+
+    def create_final_campaigns(self):
+        """Crear campañas finales asociando boletines finales con sus segmentos correspondientes"""
+        # Verificar que existan los archivos necesarios
+        if not os.path.exists('emails_finales.json'):
+            messagebox.showwarning("Sin boletines finales",
+                "No hay boletines finales. Primero clona los boletines usando 'CLONAR BOLETINES'.")
+            return
+
+        if not os.path.exists('segmentos_creados.json'):
+            messagebox.showwarning("Sin segmentos",
+                "No hay segmentos creados. Primero crea los segmentos usando 'CREAR SEGMENTOS'.")
+            return
+
+        try:
+            # Cargar boletines finales
+            with open('emails_finales.json', 'r', encoding='utf-8') as f:
+                finals = json.load(f)
+
+            # Cargar segmentos
+            with open('segmentos_creados.json', 'r', encoding='utf-8') as f:
+                segments = json.load(f)
+
+            if not finals:
+                messagebox.showwarning("Sin boletines", "No hay boletines finales en el archivo.")
+                return
+
+            if not segments:
+                messagebox.showwarning("Sin segmentos", "No hay segmentos en el archivo.")
+                return
+
+            # Confirmación
+            message = f"¿Deseas crear {len(finals)} campañas finales?\n\n"
+            message += "Proceso:\n"
+            message += "1. Se crearán campañas con boletines finales (sin PRUEBA)\n"
+            message += "2. Cada campaña se asociará a su segmento correspondiente\n"
+            message += "3. Las campañas estarán listas para envío\n\n"
+            message += f"Boletines finales: {len(finals)}\n"
+            message += f"Segmentos disponibles: {len(segments)}\n\n"
+            message += "⚠️ Este proceso puede tomar varios minutos."
+
+            result = messagebox.askyesno("Confirmar Creación de Campañas Finales", message, icon='question')
+
+            if not result:
+                return
+
+            self.final_campaigns_button.config(state='disabled')
+            self.progress_bar.start(10)
+            self.current_status.set("Creando campañas finales... Por favor espera")
+
+            # Limpiar log
+            self.log_text.delete(1.0, tk.END)
+            self.log_message("="*60)
+            self.log_message("INICIANDO CREACIÓN DE CAMPAÑAS FINALES")
+            self.log_message(f"Campañas a crear: {len(finals)}")
+            self.log_message("="*60 + "\n")
+
+            # Ejecutar en thread
+            thread = threading.Thread(target=self.run_final_campaigns_creation, args=(finals, segments))
+            thread.daemon = True
+            thread.start()
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al cargar archivos:\n\n{str(e)}")
+
+    def run_final_campaigns_creation(self, finals, segments):
+        """Ejecutar la creación de campañas finales"""
+        try:
+            # Crear un mapa de segmentos por establecimiento y tipo
+            segment_map = {}
+            for segment in segments:
+                key = f"{segment['establishment']}_{segment['type']}"
+                segment_map[key] = segment['name']
+
+            self.log_message(f"📋 Mapa de segmentos creado: {len(segment_map)} combinaciones")
+
+            creator = MauticCampaignCreator(
+                Config.MAUTIC_URL,
+                Config.MAUTIC_USERNAME,
+                Config.MAUTIC_PASSWORD,
+                self
+            )
+
+            creator.setup_driver(headless=False)
+
+            if not creator.login():
+                raise Exception("No se pudo hacer login en Mautic")
+
+            success_count = 0
+            failed_campaigns = []
+            created_campaigns = []
+
+            for final_email in finals:
+                email_name = final_email.get('name')
+                establishment = final_email.get('establishment')
+                email_type = final_email.get('type')
+                email_id = final_email.get('id')
+
+                # Buscar el segmento correspondiente
+                key = f"{establishment}_{email_type}"
+                segment_name = segment_map.get(key)
+
+                if not segment_name:
+                    self.log_message(f"\n⚠️ No se encontró segmento para {establishment} ({email_type})")
+                    failed_campaigns.append(email_name)
+                    continue
+
+                self.log_message(f"\n🎯 Creando campaña para: {email_name}")
+                self.log_message(f"   Establecimiento: {establishment}")
+                self.log_message(f"   Tipo: {email_type}")
+                self.log_message(f"   Segmento: {segment_name}")
+                self.log_message(f"   Email ID: {email_id}")
+
+                # Crear la campaña usando el email final y el segmento
+                campaign_info = {
+                    'id': email_id,
+                    'name': email_name,
+                    'establishment': establishment,
+                    'type': email_type
+                }
+
+                try:
+                    if creator.create_campaign_for_email(campaign_info, segment_name):
+                        self.log_message("   ✅ Campaña creada exitosamente")
+
+                        campaign_data = {
+                            'name': email_name,
+                            'email_id': email_id,
+                            'segment_name': segment_name,
+                            'establishment': establishment,
+                            'type': email_type,
+                            'created_at': datetime.now().isoformat()
+                        }
+                        created_campaigns.append(campaign_data)
+                        success_count += 1
+                    else:
+                        self.log_message("   ❌ Error creando campaña")
+                        failed_campaigns.append(email_name)
+                except Exception as e:
+                    self.log_message(f"   ❌ Error: {str(e)}")
+                    failed_campaigns.append(email_name)
+
+                # Pequeña pausa entre campañas
+                time.sleep(2)
+
+            creator.close()
+
+            # Guardar campañas creadas en JSON
+            if created_campaigns:
+                try:
+                    with open('campanas_finales_creadas.json', 'w', encoding='utf-8') as f:
+                        json.dump(created_campaigns, f, indent=2, ensure_ascii=False)
+                    self.log_message(f"\n✓ Archivo 'campanas_finales_creadas.json' creado con {len(created_campaigns)} campañas")
+                except Exception as e:
+                    self.log_message(f"\n⚠️ Error al guardar JSON de campañas: {str(e)}")
+
+            # Mostrar resumen
+            self.log_message("\n" + "="*60)
+            self.log_message(f"CAMPAÑAS FINALES CREADAS: {success_count}/{len(finals)}")
+
+            if failed_campaigns:
+                self.log_message("\nCampañas que no se pudieron crear:")
+                for campaign in failed_campaigns:
+                    self.log_message(f"   - {campaign}")
+
+            self.log_message("="*60)
+
+            if success_count > 0:
+                # Preguntar si desea limpiar el caché
+                self.root.after(0, lambda: self.cleanup_cache_after_final_campaigns(success_count))
+
+        except Exception as e:
+            self.log_message(f"ERROR: {str(e)}")
+            import traceback
+            self.log_message(f"Detalle: {traceback.format_exc()}")
+            self.root.after(0, lambda: messagebox.showerror("Error",
+                                                        f"Error creando campañas finales:\n\n{str(e)}"))
+        finally:
+            self.progress_bar.stop()
+            self.current_status.set("Proceso completado")
+            self.final_campaigns_button.config(state='normal')
 
 # ======================== UPLOADER CLOUDFLARE R2 ========================
 class CloudflareR2Uploader:
@@ -2346,7 +2666,7 @@ class MauticBulkAutomator:
                <td><img style="display:block" name="index_r8_c1" src="https://content.miles.com.ec/images/CME/CME-BOL-INF-MME-ACREDITACIONES_LOGOS/index_r8_c1.jpg" width="700" height="23" id="index_r8_c1" alt="" /></td>
               </tr>
               <tr>
-               <td><img style="display:block" name="index_r9_c1" src="https://content.miles.com.ec/images/CME/CME-BOL-INF-MME-ACREDITACIONES_LOGOS/index_r9_c1.jpg" width="700" height="39" id="index_r9_c1" alt="" /></td>
+               <td><img style="display:block" name="index_r9_c1" src="https://content.miles.com.ec/images/CME/CME-BOL-INF-MME-ACREDITACIONES_LOGOS/footer_2026.jpg" width="700" height="39" id="index_r9_c1" alt="" /></td>
               </tr>
             </table>
           </center>
@@ -2472,7 +2792,7 @@ class MauticBulkAutomator:
                <td><img style="display:block" name="index_r8_c1" src="https://content.miles.com.ec/images/CME/CME-BOL-INF-MME-ACREDITACIONES_LOGOS/index_r8_c1.jpg" width="700" height="23" id="index_r8_c1" alt="" /></td>
               </tr>
               <tr>
-               <td><img style="display:block" name="index_r9_c1" src="https://content.miles.com.ec/images/CME/CME-BOL-INF-MME-ACREDITACIONES_LOGOS/index_r9_c1.jpg" width="700" height="39" id="index_r9_c1" alt="" /></td>
+               <td><img style="display:block" name="index_r9_c1" src="https://content.miles.com.ec/images/CME/CME-BOL-INF-MME-ACREDITACIONES_LOGOS/footer_2026.jpg" width="700" height="39" id="index_r9_c1" alt="" /></td>
               </tr>
             </table>
           </center>
@@ -4227,19 +4547,16 @@ class MauticCampaignCreator:
                     for (var i = 0; i < options.length; i++) {
                         var option = options[i];
                         var optionText = option.textContent.trim();
-                        
+
                         console.log('Opción ' + i + ': "' + optionText + '"');
-                        
-                        // Buscar coincidencia exacta o que contenga el nombre
-                        if (optionText === emailName || 
-                            optionText.includes(emailName) || 
-                            emailName.includes(optionText)) {
-                            
-                            console.log('¡Email encontrado! Haciendo click...');
-                            
+
+                        // PRIORIDAD 1: Coincidencia exacta
+                        if (optionText === emailName) {
+                            console.log('¡Email encontrado (coincidencia exacta)! Haciendo click...');
+
                             // Asegurar que sea visible
                             option.scrollIntoView(false);
-                            
+
                             // Simular hover primero (importante para Chosen.js)
                             var mouseOverEvent = new MouseEvent('mouseover', {
                                 view: window,
@@ -4247,10 +4564,10 @@ class MauticCampaignCreator:
                                 cancelable: true
                             });
                             option.dispatchEvent(mouseOverEvent);
-                            
+
                             // Agregar clase highlighted
                             option.classList.add('highlighted');
-                            
+
                             // Esperar un momento y hacer click
                             setTimeout(function() {
                                 // Click con todos los eventos necesarios
@@ -4264,25 +4581,105 @@ class MauticCampaignCreator:
                                     option.dispatchEvent(event);
                                 });
                             }, 100);
-                            
+
                             selected = true;
                             break;
                         }
                     }
-                    
+
+                    // PRIORIDAD 2: Buscar coincidencia parcial pero SIN "PRUEBA" si el email buscado no tiene "PRUEBA"
+                    if (!selected) {
+                        var searchHasPrueba = emailName.includes('PRUEBA');
+
+                        for (var i = 0; i < options.length; i++) {
+                            var option = options[i];
+                            var optionText = option.textContent.trim();
+
+                            // Si estamos buscando un email SIN "PRUEBA", excluir opciones con "PRUEBA"
+                            if (!searchHasPrueba && optionText.includes('PRUEBA')) {
+                                console.log('Opción excluida (contiene PRUEBA): "' + optionText + '"');
+                                continue;
+                            }
+
+                            // Buscar que contenga el nombre
+                            if (optionText.includes(emailName) || emailName.includes(optionText)) {
+                                console.log('¡Email encontrado (coincidencia parcial)! Haciendo click...');
+
+                                // Asegurar que sea visible
+                                option.scrollIntoView(false);
+
+                                // Simular hover primero (importante para Chosen.js)
+                                var mouseOverEvent = new MouseEvent('mouseover', {
+                                    view: window,
+                                    bubbles: true,
+                                    cancelable: true
+                                });
+                                option.dispatchEvent(mouseOverEvent);
+
+                                // Agregar clase highlighted
+                                option.classList.add('highlighted');
+
+                                // Esperar un momento y hacer click
+                                setTimeout(function() {
+                                    // Click con todos los eventos necesarios
+                                    var events = ['mousedown', 'mouseup', 'click'];
+                                    events.forEach(function(eventType) {
+                                        var event = new MouseEvent(eventType, {
+                                            view: window,
+                                            bubbles: true,
+                                            cancelable: true
+                                        });
+                                        option.dispatchEvent(event);
+                                    });
+                                }, 100);
+
+                                selected = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // PRIORIDAD 3: Si aún no se seleccionó nada, seleccionar la primera opción (sin PRUEBA si aplica)
                     if (!selected && options.length > 0) {
-                        // Si no hay coincidencia exacta, seleccionar la primera opción
-                        console.log('No se encontró coincidencia exacta, seleccionando primera opción');
-                        var firstOption = options[0];
-                        
-                        firstOption.scrollIntoView(false);
-                        firstOption.classList.add('highlighted');
-                        
-                        setTimeout(function() {
-                            firstOption.click();
-                        }, 100);
-                        
-                        selected = true;
+                        console.log('No se encontró coincidencia, buscando primera opción válida');
+                        var searchHasPrueba = emailName.includes('PRUEBA');
+
+                        for (var i = 0; i < options.length; i++) {
+                            var option = options[i];
+                            var optionText = option.textContent.trim();
+
+                            // Excluir opciones con PRUEBA si estamos buscando email final
+                            if (!searchHasPrueba && optionText.includes('PRUEBA')) {
+                                continue;
+                            }
+
+                            console.log('Seleccionando primera opción válida: "' + optionText + '"');
+
+                            option.scrollIntoView(false);
+                            option.classList.add('highlighted');
+
+                            setTimeout(function() {
+                                option.click();
+                            }, 100);
+
+                            selected = true;
+                            break;
+                        }
+
+                        // Si no se encontró ninguna opción válida, seleccionar la primera sin filtrar
+                        if (!selected && options.length > 0) {
+                            console.log('No se encontró opción válida, seleccionando primera disponible');
+                            var firstOption = options[0];
+
+                            firstOption.scrollIntoView(false);
+                            firstOption.classList.add('highlighted');
+
+                            setTimeout(function() {
+                                firstOption.click();
+                            }, 100);
+
+                            selected = true;
+                        }
                     }
                     
                     return selected;
@@ -5860,16 +6257,33 @@ class MauticSegmentCreator:
             if save_clicked:
                 self.log(f"   ✅ Segmento '{segment_name}' guardado exitosamente")
                 time.sleep(3)
-                return True
+
+                # Retornar información del segmento creado
+                segment_data = {
+                    "name": segment_name,
+                    "establishment": establishment,
+                    "type": email_type,
+                    "field": field_alias,
+                    "filters": {
+                        "campo_personalizado": f"{field_alias}_txt",
+                        "operador_campo": "!=",
+                        "valor_campo": "0",
+                        "tipo_socio": tipo_socio_value,
+                        "fecha_ejecucion": today_date
+                    },
+                    "email_origen": email_name,
+                    "fecha_creacion": today_date
+                }
+                return segment_data
             else:
                 self.log("   ❌ Error al guardar")
-                return False
-                
+                return None
+
         except Exception as e:
             self.log(f"   ❌ Error: {str(e)}")
             import traceback
             self.log(traceback.format_exc())
-            return False
+            return None
 
     def _add_filter_from_choose_one(self, field_name, operator, value):
         """Agregar un filtro usando el selector 'Choose one...' con verificaciones robustas"""

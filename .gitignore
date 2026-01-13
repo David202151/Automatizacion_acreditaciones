@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Archivos de configuración sensibles
+.env
+*.env
+
+# Archivos JSON generados por la aplicación
+emails_creados.json
+emails_finales.json
+segmentos_creados.json
+campanas_finales_creadas.json
+emails_creados_backup_*.json
+correcciones.json
+
+# Archivos de Chrome/Selenium
+mautic_chrome_*/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
