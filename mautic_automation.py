@@ -32,15 +32,15 @@ pyautogui.PAUSE = 0.5
 class Config:
     # Configuración de Mautic
     MAUTIC_URL = "https://marketingmch.miles.com.ec"
-    MAUTIC_USERNAME = "david.vargas"
-    MAUTIC_PASSWORD = "nubxe6-Xugved-favgyw"
+    MAUTIC_USERNAME = "user"
+    MAUTIC_PASSWORD = "Password"
     
     # Configuración de Cloudflare R2 (S3)
-    R2_ACCESS_KEY_ID = "fcf42625ad735ad63da22100af72e684"
-    R2_SECRET_ACCESS_KEY = "b304706b40e5544fbc4a50c543e2ba66f5f41595c69afa1b56097dc2fce5db2a"
-    R2_ENDPOINT = "https://95f977894b55126e9809447b9bd1fa20.r2.cloudflarestorage.com"
-    R2_BUCKET_NAME = "icare"
-    R2_FOLDER_PATH = "images/CME/CME-BOL-INF-MME-ACREDITACIONES_LOGOS/"
+    R2_ACCESS_KEY_ID = "R2_ACCESS_KEY_ID"
+    R2_SECRET_ACCESS_KEY = "R2_SECRET_ACCESS_KEY"
+    R2_ENDPOINT = "R2_ENDPOINT"
+    R2_BUCKET_NAME = "R2_BUCKET_NAME"
+    R2_FOLDER_PATH = "R2_FOLDER_PATH"
     
     # URL base para las imágenes
     IMAGE_BASE_URL = "https://content.miles.com.ec/images/CME/CME-BOL-INF-MME-ACREDITACIONES_LOGOS/"
